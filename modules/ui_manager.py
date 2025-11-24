@@ -514,12 +514,28 @@ def render_asset_list_section(df_market_data, c_symbol):
     df_raw["Original_Index"] = df_raw.index
 
     if not df_market_data.empty:
+        # Select only columns that exist in df_market_data
+        merge_cols = ["Ticker", "Market_Value"]
+        if "Current_Price" in df_market_data.columns:
+            merge_cols.append("Current_Price")
+        if "Last_Update" in df_market_data.columns:
+            merge_cols.append("Last_Update")
+        
         df_merged = pd.merge(
-            df_raw, df_market_data[["Ticker", "Market_Value", "Current_Price", "Last_Update"]], on="Ticker", how="left"
+            df_raw, df_market_data[merge_cols], on="Ticker", how="left"
         )
         df_merged["Market_Value"] = df_merged["Market_Value"].fillna(0)
-        df_merged["Current_Price"] = df_merged["Current_Price"].fillna(0)
-        df_merged["Last_Update"] = df_merged["Last_Update"].fillna("N/A")
+        
+        # Add missing columns if they weren't in the merge
+        if "Current_Price" not in df_merged.columns:
+            df_merged["Current_Price"] = 0
+        else:
+            df_merged["Current_Price"] = df_merged["Current_Price"].fillna(0)
+        
+        if "Last_Update" not in df_merged.columns:
+            df_merged["Last_Update"] = "N/A"
+        else:
+            df_merged["Last_Update"] = df_merged["Last_Update"].fillna("N/A")
     else:
         df_merged = df_raw
         df_merged["Market_Value"] = 0
@@ -548,8 +564,18 @@ def render_asset_list_section(df_market_data, c_symbol):
     for _, row in df_merged.iterrows():
         idx = row["Original_Index"]
         item = st.session_state.portfolio[idx]
-        last_update = row.get("Last_Update", item.get("Last_Update", "N/A"))
-        current_price = row.get("Current_Price", 0)
+        
+        # Safely get Last_Update - try from merged data first, then from original item
+        if "Last_Update" in row and pd.notna(row["Last_Update"]) and row["Last_Update"] != "N/A":
+            last_update = row["Last_Update"]
+        else:
+            last_update = item.get("Last_Update", "N/A")
+        
+        # Safely get Current_Price
+        if "Current_Price" in row and pd.notna(row["Current_Price"]):
+            current_price = row["Current_Price"]
+        else:
+            current_price = 0
         
         # Check if outdated
         is_outdated = check_is_outdated(last_update)
