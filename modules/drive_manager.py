@@ -130,7 +130,9 @@ def credentials_from_dict(creds_dict: Dict[str, Any]) -> Tuple[Optional[Credenti
             - was_refreshed: True if token was refreshed
     """
     try:
-        creds = Credentials.from_authorized_user_info(creds_dict, config.google_drive.scopes)
+        # Don't pass scopes to from_authorized_user_info to avoid scope validation issues
+        # Google sometimes adds 'openid' automatically, which causes scope mismatch
+        creds = Credentials.from_authorized_user_info(creds_dict)
 
         # Check validity and refresh if needed
         if not creds.valid:

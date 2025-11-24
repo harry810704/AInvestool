@@ -99,7 +99,7 @@ def handle_oauth_callback() -> None:
     
     # Get the code and clear it immediately to prevent reuse
     code = st.query_params["code"]
-    # st.query_params.clear()
+    st.query_params.clear()
     
     logger.info("Processing OAuth callback")
     
