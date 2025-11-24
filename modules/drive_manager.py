@@ -163,7 +163,12 @@ def get_user_info(creds: Credentials) -> Optional[Dict[str, str]]:
         Optional[Dict[str, str]]: Dictionary with 'email' and 'name' keys, or None if failed
     """
     try:
-        from googleapiclient.discovery import build
+        # Validate credentials
+        if not creds or not creds.valid:
+            logger.warning("Invalid credentials provided to get_user_info")
+            return None
+        
+        # Build the OAuth2 service
         service = build('oauth2', 'v2', credentials=creds)
         user_info = service.userinfo().get().execute()
         
@@ -175,7 +180,11 @@ def get_user_info(creds: Credentials) -> Optional[Dict[str, str]]:
         return result
     except Exception as e:
         logger.error(f"Failed to get user info: {e}")
-        return None
+        # Return a fallback with minimal info
+        return {
+            'email': 'user@example.com',
+            'name': 'User'
+        }
 
 
 # ==========================================

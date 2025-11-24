@@ -14,7 +14,11 @@ from dataclasses import dataclass, field
 class GoogleDriveConfig:
     """Configuration for Google Drive integration."""
     
-    scopes: List[str] = field(default_factory=lambda: ["https://www.googleapis.com/auth/drive.file"])
+    scopes: List[str] = field(default_factory=lambda: [
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile",
+    ])
     folder_name: str = "AInvestool"
     portfolio_filename: str = "my_portfolio.csv"
     settings_filename: str = "allocation_settings.json"

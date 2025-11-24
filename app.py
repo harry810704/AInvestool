@@ -97,7 +97,10 @@ def handle_oauth_callback() -> None:
     if "code" not in st.query_params:
         return
     
+    # Get the code and clear it immediately to prevent reuse
     code = st.query_params["code"]
+    st.query_params.clear()
+    
     logger.info("Processing OAuth callback")
     
     creds = exchange_code_for_token(code)
@@ -110,6 +113,8 @@ def handle_oauth_callback() -> None:
         if user_info:
             state.user_info = user_info
             logger.info(f"User info retrieved: {user_info['email']}")
+        else:
+            logger.warning("Could not retrieve user info, but authentication succeeded")
         
         # Encrypt and store in cookie
         token_dict = credentials_to_dict(creds)
@@ -124,10 +129,10 @@ def handle_oauth_callback() -> None:
             )
             logger.info("Credentials saved to encrypted cookie")
         
-        st.query_params.clear()
         st.rerun()
     else:
         logger.error("OAuth authentication failed")
+        st.error("認證失敗，請重試")
 
 
 def render_login_page() -> None:
