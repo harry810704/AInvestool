@@ -107,6 +107,7 @@ def asset_action_dialog(index, asset):
             )
             asset["Quantity"] = new_qty
             save_portfolio(st.session_state.portfolio)
+            st.session_state["force_refresh_market_data"] = True
             st.success("成功")
             st.rerun()
 
@@ -117,6 +118,7 @@ def asset_action_dialog(index, asset):
         if st.button("確認減倉", key=f"btn_sell_{index}", type="primary"):
             asset["Quantity"] -= sell_qty
             save_portfolio(st.session_state.portfolio)
+            st.session_state["force_refresh_market_data"] = True
             st.success("成功")
             st.rerun()
 
@@ -132,12 +134,14 @@ def asset_action_dialog(index, asset):
             asset["Quantity"] = fq
             asset["Avg_Cost"] = fc
             save_portfolio(st.session_state.portfolio)
+            st.session_state["force_refresh_market_data"] = True
             st.rerun()
 
     with tab_del:
         if st.button("❌ 確認刪除", key=f"btn_del_{index}", type="primary"):
             st.session_state.portfolio.pop(index)
             save_portfolio(st.session_state.portfolio)
+            st.session_state["force_refresh_market_data"] = True
             st.rerun()
 
 
@@ -172,6 +176,7 @@ def add_asset_dialog():
                 }
             )
             save_portfolio(st.session_state.portfolio)
+            st.session_state["force_refresh_market_data"] = True
             st.success(f"已新增 {ticker}")
             st.rerun()
 
@@ -464,6 +469,7 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
                     )
 
             save_portfolio(st.session_state.portfolio)
+            st.session_state["force_refresh_market_data"] = True
             st.session_state.draft_actions = []  # 清空
             st.success("交易已成功執行！請至資產清單查看。")
             st.balloons()

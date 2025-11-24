@@ -205,6 +205,8 @@ if not state.load_portfolio and not state.portfolio: # Changed from "portfolio" 
             save_portfolio(portfolio)
         state.portfolio = portfolio
     state.load_portfolio = True
+    # Force market data refresh when portfolio is loaded
+    st.session_state["force_refresh_market_data"] = True
 
 # Sidebar
 with st.sidebar:
@@ -227,6 +229,7 @@ if state.portfolio and not state.has_auto_updated: # Changed from 'portfolio' in
         
         if success > 0:
             save_portfolio(state.portfolio)
+            st.session_state["force_refresh_market_data"] = True
             logger.info(f"Portfolio updated: {success} success, {fail} failed")
         
         if fail > 0:

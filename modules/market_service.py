@@ -227,39 +227,53 @@ def get_market_data(
         ticker = item["Ticker"]
         asset_currency = item.get("Currency", "USD")
         manual_price = item.get("Manual_Price", 0.0)
+        last_update = item.get("Last_Update", "N/A")
         
         current_price = 0.0
         daily_change_pct = 0.0
         history_data = pd.Series()
         status = "⚠️ 待更新"
         
-        # Try to fetch live data
-        try:
-            stock = yf.Ticker(ticker)
-            hist = stock.history(period="1mo")
+        # Check if we have fresh cached data (within 24 hours)
+        is_outdated = check_is_outdated(last_update)
+        
+        if not is_outdated and manual_price > 0:
+            # Use cached price - no need to fetch from Yahoo Finance
+            current_price = manual_price
+            status = "💾 快取 (24h內)"
+            logger.debug(f"Using cached price for {ticker}: {manual_price}")
             
-            if not hist.empty:
-                raw_price = hist["Close"].iloc[-1]
-                raw_prev = hist["Close"].iloc[-2] if len(hist) > 1 else raw_price
-                daily_change_pct = (raw_price - raw_prev) / raw_prev if raw_prev > 0 else 0
-                history_data = hist["Close"]
-                current_price = raw_price
-                status = "✅ 即時"
-            else:
-                raise Exception("No Data")
-        except Exception as e:
-            logger.debug(f"Live data unavailable for {ticker}: {e}")
-            status = "⚠️ 手動/舊資料"
-            
-            if manual_price > 0:
-                current_price = manual_price
-            else:
-                current_price = item["Avg_Cost"]
-                status = "⚠️ 僅顯示成本"
-            
-            # Generate dummy history
+            # Generate dummy history for cached data
             dates = pd.date_range(end=datetime.today(), periods=30)
             history_data = pd.Series([current_price] * 30, index=dates)
+        else:
+            # Try to fetch live data (price is outdated or not available)
+            try:
+                stock = yf.Ticker(ticker)
+                hist = stock.history(period="1mo")
+                
+                if not hist.empty:
+                    raw_price = hist["Close"].iloc[-1]
+                    raw_prev = hist["Close"].iloc[-2] if len(hist) > 1 else raw_price
+                    daily_change_pct = (raw_price - raw_prev) / raw_prev if raw_prev > 0 else 0
+                    history_data = hist["Close"]
+                    current_price = raw_price
+                    status = "✅ 即時"
+                else:
+                    raise Exception("No Data")
+            except Exception as e:
+                logger.debug(f"Live data unavailable for {ticker}: {e}")
+                status = "⚠️ 手動/舊資料"
+                
+                if manual_price > 0:
+                    current_price = manual_price
+                else:
+                    current_price = item["Avg_Cost"]
+                    status = "⚠️ 僅顯示成本"
+                
+                # Generate dummy history
+                dates = pd.date_range(end=datetime.today(), periods=30)
+                history_data = pd.Series([current_price] * 30, index=dates)
         
         # Currency conversion
         rate_multiplier = 1.0
