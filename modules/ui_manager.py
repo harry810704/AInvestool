@@ -509,17 +509,22 @@ def render_asset_list_section(df_market_data, c_symbol):
 
     df_raw = pd.DataFrame(st.session_state.portfolio)
     if df_raw.empty:
+        st.info("目前無資產。")
         return
     df_raw["Original_Index"] = df_raw.index
 
     if not df_market_data.empty:
         df_merged = pd.merge(
-            df_raw, df_market_data[["Ticker", "Market_Value"]], on="Ticker", how="left"
+            df_raw, df_market_data[["Ticker", "Market_Value", "Current_Price", "Last_Update"]], on="Ticker", how="left"
         )
         df_merged["Market_Value"] = df_merged["Market_Value"].fillna(0)
+        df_merged["Current_Price"] = df_merged["Current_Price"].fillna(0)
+        df_merged["Last_Update"] = df_merged["Last_Update"].fillna("N/A")
     else:
         df_merged = df_raw
         df_merged["Market_Value"] = 0
+        df_merged["Current_Price"] = 0
+        df_merged["Last_Update"] = "N/A"
 
     if filter_cat != "所有類別":
         df_merged = df_merged[df_merged["Type"] == filter_cat]
@@ -529,16 +534,44 @@ def render_asset_list_section(df_market_data, c_symbol):
     if "市值" in sort_by:
         df_merged = df_merged.sort_values(by="Market_Value", ascending=False)
 
+    # Header row
+    h1, h2, h3, h4, h5, h6 = st.columns([1.2, 0.8, 1, 1.2, 0.6, 0.8])
+    h1.caption("**代號**")
+    h2.caption("**數量**")
+    h3.caption("**成本**")
+    h4.caption("**現價 & 更新時間**")
+    h5.caption("**同步**")
+    h6.caption("**操作**")
+    st.divider()
+
     # 簡易渲染
     for _, row in df_merged.iterrows():
         idx = row["Original_Index"]
         item = st.session_state.portfolio[idx]
+        last_update = row.get("Last_Update", item.get("Last_Update", "N/A"))
+        current_price = row.get("Current_Price", 0)
+        
+        # Check if outdated
+        is_outdated = check_is_outdated(last_update)
+        update_color = "#FF8C00" if is_outdated else "#28a745"
+        
         with st.container():
             c1, c2, c3, c4, c5, c6 = st.columns([1.2, 0.8, 1, 1.2, 0.6, 0.8])
             c1.markdown(f"**{item['Ticker']}**")
+            c1.caption(f"{item['Type']}")
             c2.write(f"{item['Quantity']}")
             c3.write(f"{item['Avg_Cost']}")
-            c4.write(item.get("Last_Update", "N/A"))
+            
+            # Display current price and last update
+            with c4:
+                if current_price > 0:
+                    st.markdown(f"**{c_symbol}{current_price:,.2f}**")
+                else:
+                    st.markdown("_N/A_")
+                st.markdown(
+                    f"<span style='color:{update_color}; font-size:11px'>🕒 {last_update}</span>", 
+                    unsafe_allow_html=True
+                )
             
             # Sync button to fetch individual price
             if c5.button("🔄", key=f"sync_{idx}", help="同步最新價格"):

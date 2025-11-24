@@ -23,6 +23,7 @@ class SessionStateManager:
     
     # State keys
     GOOGLE_CREDS = "google_creds"
+    USER_INFO = "user_info"
     PORTFOLIO = "portfolio"
     ALLOCATION_TARGETS = "allocation_targets"
     HAS_AUTO_UPDATED = "has_auto_updated"
@@ -53,6 +54,16 @@ class SessionStateManager:
         """Clear Google credentials from session state."""
         if self.GOOGLE_CREDS in st.session_state:
             del st.session_state[self.GOOGLE_CREDS]
+    
+    @property
+    def user_info(self) -> Optional[dict]:
+        """Get user information from session state."""
+        return st.session_state.get(self.USER_INFO)
+    
+    @user_info.setter
+    def user_info(self, value: Optional[dict]):
+        """Set user information in session state."""
+        st.session_state[self.USER_INFO] = value
     
     @property
     def is_authenticated(self) -> bool:
@@ -256,6 +267,7 @@ class SessionStateManager:
         """Clear all managed session state (useful for logout)."""
         keys_to_clear = [
             self.GOOGLE_CREDS,
+            self.USER_INFO,
             self.PORTFOLIO,
             self.ALLOCATION_TARGETS,
             self.HAS_AUTO_UPDATED,

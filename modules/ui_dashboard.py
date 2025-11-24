@@ -249,6 +249,9 @@ def render_single_category_detail(df_all: pd.DataFrame, total_val: float, c_symb
                     status_color = "green" if "即時" in row['Status'] else "#FF4B4B"
                     st.caption(f"持倉: {row['Quantity']:,.2f} | 均價: {row['Avg_Cost']:,.0f}")
                     st.markdown(f"<span style='background-color:{status_color}; color:white; padding:1px 4px; border-radius:3px; font-size:10px'>{row['Status']}</span>", unsafe_allow_html=True)
+                    # Display last update time
+                    last_update = row.get('Last_Update', 'N/A')
+                    st.caption(f"🕒 更新: {last_update}")
                 
                 with c2:
                     st.markdown(f"**{c_symbol}{row['Market_Value']:,.0f}**")

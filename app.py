@@ -16,6 +16,7 @@ from modules.drive_manager import (
     exchange_code_for_token,
     credentials_to_dict,
     credentials_from_dict,
+    get_user_info,
 )
 from modules.data_loader import load_portfolio, save_portfolio, load_allocation_settings
 from modules.market_service import (
@@ -68,6 +69,11 @@ def restore_session_from_cookie() -> None:
                 state.google_creds = creds
                 logger.info("Session restored from cookie")
                 
+                # Get user info
+                user_info = get_user_info(creds)
+                if user_info:
+                    state.user_info = user_info
+                
                 # Update cookie if token was refreshed
                 if was_refreshed:
                     logger.info("Token was refreshed, updating cookie")
@@ -98,6 +104,12 @@ def handle_oauth_callback() -> None:
     if creds:
         state.google_creds = creds
         logger.info("OAuth authentication successful")
+        
+        # Get user info
+        user_info = get_user_info(creds)
+        if user_info:
+            state.user_info = user_info
+            logger.info(f"User info retrieved: {user_info['email']}")
         
         # Encrypt and store in cookie
         token_dict = credentials_to_dict(creds)
@@ -136,8 +148,14 @@ def render_login_page() -> None:
 def handle_logout() -> None:
     """Handle user logout."""
     logger.info("User logging out")
-    state.clear_all()
+    
+    # Delete the encrypted cookie
     cookie_manager.delete(config.security.cookie_name)
+    
+    # Clear ALL session state (not just managed keys)
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    
     st.rerun()
 
 
@@ -187,7 +205,12 @@ if not state.load_portfolio and not state.portfolio: # Changed from "portfolio" 
 with st.sidebar:
     st.success("已連線 ✅")
     
-    if st.button("登出"):
+    # Display user info
+    if state.user_info:
+        st.markdown(f"**👤 {state.user_info.get('name', 'User')}**")
+        st.caption(state.user_info.get('email', ''))
+    
+    if st.button("🚪 登出", use_container_width=True):
         handle_logout()
 
 # Auto-update portfolio prices

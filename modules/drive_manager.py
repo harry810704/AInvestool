@@ -152,10 +152,35 @@ def credentials_from_dict(creds_dict: Dict[str, Any]) -> Tuple[Optional[Credenti
         return None, False
 
 
+def get_user_info(creds: Credentials) -> Optional[Dict[str, str]]:
+    """
+    Get user information from Google OAuth2 API.
+    
+    Args:
+        creds: Google credentials
+        
+    Returns:
+        Optional[Dict[str, str]]: Dictionary with 'email' and 'name' keys, or None if failed
+    """
+    try:
+        from googleapiclient.discovery import build
+        service = build('oauth2', 'v2', credentials=creds)
+        user_info = service.userinfo().get().execute()
+        
+        result = {
+            'email': user_info.get('email', 'Unknown'),
+            'name': user_info.get('name', user_info.get('email', 'User'))
+        }
+        logger.debug(f"Retrieved user info: {result['email']}")
+        return result
+    except Exception as e:
+        logger.error(f"Failed to get user info: {e}")
+        return None
+
+
 # ==========================================
 # Drive API 操作 (維持不變)
 # ==========================================
-# ... (以下 Drive API 程式碼完全不用動，請保留原本的 get_drive_service, read_csv... 等函式)
 def get_drive_service(creds: Credentials) -> Resource:
     """
     Build Google Drive service from credentials.

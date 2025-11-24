@@ -290,6 +290,7 @@ def get_market_data(
             "Status": status,
             "Avg_Cost": item["Avg_Cost"],
             "Currency": asset_currency,
+            "Last_Update": item.get("Last_Update", "N/A"),
         })
     
     logger.info(f"Market data fetched for {len(data_list)} assets")
