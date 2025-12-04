@@ -119,6 +119,7 @@ class AppConfig:
     # Environment
     environment: str = field(default_factory=lambda: os.getenv("APP_ENV", "production"))
     debug: bool = field(default_factory=lambda: os.getenv("DEBUG", "false").lower() == "true")
+    dev_mode: bool = field(default_factory=lambda: os.getenv("DEV_MODE", "false").lower() == "true")
     
     # Sub-configurations
     google_drive: GoogleDriveConfig = field(default_factory=GoogleDriveConfig)

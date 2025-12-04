@@ -94,7 +94,7 @@ def load_portfolio() -> List[dict]:
 
 def save_portfolio(portfolio: List[dict]) -> None:
     """
-    Save portfolio to Google Drive.
+    Save portfolio to Google Drive or local file (dev mode).
     
     Args:
         portfolio: List of asset dictionaries
@@ -103,30 +103,44 @@ def save_portfolio(portfolio: List[dict]) -> None:
         DriveServiceError: If Drive service is unavailable or save fails
         DataValidationError: If portfolio data is invalid
     """
+    # Validate all assets before saving
+    validated_portfolio = []
+    for item in portfolio:
+        try:
+            asset = Asset.from_dict(item)
+            validated_portfolio.append(asset.to_dict())
+        except Exception as e:
+            logger.error(f"Invalid asset data: {item}, error: {e}")
+            raise DataValidationError(
+                f"Invalid asset data for {item.get('Ticker', 'unknown')}",
+                details=str(e)
+            )
+    
+    # Check if in dev mode
+    if config.dev_mode:
+        # Save to local CSV file
+        try:
+            df = pd.DataFrame(validated_portfolio)
+            df.to_csv("my_portfolio.csv", index=False)
+            logger.info(f"DEV_MODE: Saved {len(validated_portfolio)} assets to local CSV")
+            return
+        except Exception as e:
+            logger.error(f"Failed to save portfolio to local file: {e}")
+            raise DriveServiceError(
+                "Failed to save portfolio to local file",
+                details=str(e)
+            )
+    
+    # Production mode: save to Google Drive
     service = get_service()
     if not service:
         logger.error("Cannot save portfolio: No Drive service available")
         raise DriveServiceError("Drive service not available")
     
     try:
-        # Validate all assets before saving
-        validated_portfolio = []
-        for item in portfolio:
-            try:
-                asset = Asset.from_dict(item)
-                validated_portfolio.append(asset.to_dict())
-            except Exception as e:
-                logger.error(f"Invalid asset data: {item}, error: {e}")
-                raise DataValidationError(
-                    f"Invalid asset data for {item.get('Ticker', 'unknown')}",
-                    details=str(e)
-                )
-        
         save_csv_to_drive(service, config.google_drive.portfolio_filename, validated_portfolio)
         logger.info(f"Saved {len(validated_portfolio)} assets to portfolio")
         
-    except DataValidationError:
-        raise
     except Exception as e:
         logger.error(f"Failed to save portfolio: {e}")
         raise DriveServiceError(

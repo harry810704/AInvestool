@@ -26,6 +26,7 @@ from modules.market_service import (
 )
 from modules.ui_dashboard import render_dashboard
 from modules.ui_manager import render_manager
+from modules.ui_risk_analysis import render_risk_analysis
 from modules.state_manager import get_state_manager
 from modules.logger import get_logger
 from config import get_config
@@ -168,31 +169,53 @@ def handle_logout() -> None:
 # Main Application Logic
 # ==========================================
 
-# Restore session from cookie if available
-restore_session_from_cookie()
+# Dev mode authentication bypass
+if config.dev_mode and not state.is_authenticated:
+    logger.warning("DEV_MODE enabled - bypassing authentication with fake user")
+    # Set fake credentials for dev mode
+    state.user_info = {
+        'email': 'dev_user@localhost',
+        'name': 'Dev User',
+        'picture': '',
+        'sub': 'dev_user_id'
+    }
+    # We don't set google_creds in dev mode, so is_authenticated will be False
+    # Instead, we'll check for dev_mode separately
+    logger.info("Dev mode user set")
 
-# Handle OAuth callback
-handle_oauth_callback()
+# Restore session from cookie if available (skip in dev mode)
+if not config.dev_mode:
+    restore_session_from_cookie()
 
-# Check authentication
-if not state.is_authenticated:
+# Handle OAuth callback (skip in dev mode)
+if not config.dev_mode:
+    handle_oauth_callback()
+
+# Check authentication (allow dev mode to bypass)
+if not config.dev_mode and not state.is_authenticated:
     render_login_page()
     st.stop()
 
-logger.debug("User is authenticated, loading application")
+logger.debug("User authenticated or in dev mode, loading application")
 
 # Initialize session state
 state.initialize()
 
 # Load portfolio data
-if not state.load_portfolio and not state.portfolio: # Changed from "portfolio" not in st.session_state
-    logger.info("Loading portfolio from Google Drive")
-    with st.spinner("正在從 Google Drive 同步資料..."):
-        portfolio = load_portfolio()
-        logger.info("Loading allocation settings")
-        state.allocation_targets = load_allocation_settings()
-        if not portfolio:
-            logger.info("No portfolio found, creating default")
+if not state.load_portfolio and not state.portfolio:
+    if config.dev_mode:
+        # In dev mode, use local CSV file
+        logger.info("DEV_MODE: Loading portfolio from local CSV file")
+        import os
+        local_portfolio_path = "my_portfolio.csv"
+        
+        if os.path.exists(local_portfolio_path):
+            import pandas as pd
+            df = pd.read_csv(local_portfolio_path)
+            portfolio = df.to_dict('records')
+            logger.info(f"Loaded {len(portfolio)} assets from local file")
+        else:
+            logger.info("No local portfolio found, creating default")
             portfolio = [{
                 "Type": "美股",
                 "Ticker": "AAPL",
@@ -202,23 +225,52 @@ if not state.load_portfolio and not state.portfolio: # Changed from "portfolio" 
                 "Manual_Price": 0.0,
                 "Last_Update": "N/A",
             }]
-            save_portfolio(portfolio)
+        
+        # Load allocation settings from local file or use defaults
+        state.allocation_targets = config.allocation.targets.copy()
         state.portfolio = portfolio
+    else:
+        # Production mode: load from Google Drive
+        logger.info("Loading portfolio from Google Drive")
+        with st.spinner("正在從 Google Drive 同步資料..."):
+            portfolio = load_portfolio()
+            logger.info("Loading allocation settings")
+            state.allocation_targets = load_allocation_settings()
+            if not portfolio:
+                logger.info("No portfolio found, creating default")
+                portfolio = [{
+                    "Type": "美股",
+                    "Ticker": "AAPL",
+                    "Quantity": 10,
+                    "Avg_Cost": 150.0,
+                    "Currency": "USD",
+                    "Manual_Price": 0.0,
+                    "Last_Update": "N/A",
+                }]
+                save_portfolio(portfolio)
+            state.portfolio = portfolio
     state.load_portfolio = True
     # Force market data refresh when portfolio is loaded
     st.session_state["force_refresh_market_data"] = True
 
 # Sidebar
 with st.sidebar:
-    st.success("已連線 ✅")
+    if config.dev_mode:
+        st.warning("🔧 DEV MODE")
+        st.caption("開發模式：使用本地檔案")
+    else:
+        st.success("已連線 ✅")
     
     # Display user info
     if state.user_info:
         st.markdown(f"**👤 {state.user_info.get('name', 'User')}**")
         st.caption(state.user_info.get('email', ''))
     
-    if st.button("🚪 登出", use_container_width=True):
-        handle_logout()
+    if not config.dev_mode:
+        if st.button("🚪 登出", use_container_width=True):
+            handle_logout()
+    else:
+        st.caption("開發模式下無需登出")
 
 # Auto-update portfolio prices
 if state.portfolio and not state.has_auto_updated: # Changed from 'portfolio' in st.session_state and "has_auto_updated" not in st.session_state
@@ -311,12 +363,15 @@ else:
         total_val = st.session_state.get("last_total_val", 0)
 
 # Render tabs
-tab1, tab2 = st.tabs(["📊 投資戰情室", "⚙️ 設定與管理"])
+tab1, tab2, tab3 = st.tabs(["📊 投資戰情室", "⚙️ 設定與管理", "📈 風險分析"])
 
 with tab1:
     render_dashboard(df_all, c_symbol, total_val)
 
 with tab2:
     render_manager(df_all, c_symbol, total_val)
+
+with tab3:
+    render_risk_analysis(state.portfolio, c_symbol)
 
 logger.debug("Application render complete")

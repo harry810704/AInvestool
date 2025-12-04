@@ -84,10 +84,9 @@ def calculate_base_suggestions(df_market_data, total_val, new_fund):
 
 @st.dialog("⚙️ 資產管理與交易")
 def asset_action_dialog(index, asset):
-    # (維持原樣，為節省篇幅省略內容，請保留您原本的程式碼)
     st.caption(f"管理：**{asset['Ticker']}**")
-    tab_buy, tab_sell, tab_edit, tab_del = st.tabs(
-        ["➕ 加倉", "➖ 減倉", "✏️ 修正", "🗑️ 刪除"]
+    tab_buy, tab_sell, tab_edit, tab_risk, tab_del = st.tabs(
+        ["➕ 加倉", "➖ 減倉", "✏️ 修正", "📈 風控建議", "🗑️ 刪除"]
     )
 
     with tab_buy:
@@ -137,12 +136,128 @@ def asset_action_dialog(index, asset):
             st.session_state["force_refresh_market_data"] = True
             st.rerun()
 
+    with tab_risk:
+        st.markdown("### 🎯 ATR 風控建議")
+        st.caption(f"根據 ATR (平均真實波動區間) 計算停損停利建議")
+        
+        # Display current position info
+        col_info1, col_info2 = st.columns(2)
+        col_info1.metric("代號", asset["Ticker"])
+        col_info2.metric("平均成本", f"{asset['Currency']} {asset['Avg_Cost']:.2f}")
+        
+        # Get current price from market data if available
+        current_price = asset.get("Manual_Price", asset["Avg_Cost"])
+        if current_price == 0:
+            current_price = asset["Avg_Cost"]
+        
+        col_info1.metric("當前價格", f"{asset['Currency']} {current_price:.2f}")
+        col_info2.metric("持有數量", f"{asset['Quantity']:.2f}")
+        
+        st.divider()
+        
+        # Parameter inputs
+        col_param1, col_param2 = st.columns(2)
+        atr_multiplier = col_param1.slider(
+            "ATR 倍數",
+            min_value=1.0,
+            max_value=5.0,
+            value=2.0,
+            step=0.5,
+            key=f"atr_mult_{index}",
+            help="用於計算停損距離的 ATR 倍數"
+        )
+        r_ratio = col_param2.slider(
+            "R-Ratio (風險回報比)",
+            min_value=1.0,
+            max_value=5.0,
+            value=2.0,
+            step=0.5,
+            key=f"r_ratio_{index}",
+            help="停利目標相對於停損的倍數"
+        )
+        
+        # Calculate button
+        if st.button("🔍 計算建議線", key=f"calc_risk_{index}", type="primary"):
+            from modules.risk_management import suggest_sl_tp_for_holding
+            
+            with st.spinner(f"正在計算 {asset['Ticker']} 的風控建議..."):
+                result = suggest_sl_tp_for_holding(
+                    ticker=asset["Ticker"],
+                    avg_cost=asset["Avg_Cost"],
+                    current_price=current_price,
+                    atr_multiplier=atr_multiplier,
+                    r_ratio=r_ratio
+                )
+                
+                if result:
+                    st.session_state[f"risk_calc_{index}"] = result
+                    st.success("✅ 計算完成！")
+                    st.rerun()
+                else:
+                    st.error("❌ 無法計算 ATR，可能是數據不足或代號錯誤")
+        
+        # Display results if available
+        if f"risk_calc_{index}" in st.session_state:
+            result = st.session_state[f"risk_calc_{index}"]
+            
+            st.divider()
+            st.markdown("### 📊 計算結果")
+            
+            # Display metrics
+            col_r1, col_r2, col_r3 = st.columns(3)
+            col_r1.metric(
+                "ATR 值",
+                f"{result['atr_value']:.4f}",
+                help="當前的平均真實波動區間"
+            )
+            col_r2.metric(
+                "1R 距離",
+                f"{result['one_r_distance']:.2f}",
+                help="單位風險距離 (ATR × 倍數)"
+            )
+            col_r3.metric(
+                "未實現損益",
+                f"{result['unrealized_pl_pct']:.2f}%",
+                delta=f"{result['unrealized_pl_pct']:.2f}%"
+            )
+            
+            st.divider()
+            
+            # SL/TP prices
+            col_sl, col_tp = st.columns(2)
+            col_sl.markdown(f"""
+            <div style='background-color: #ffebee; padding: 15px; border-radius: 10px; border-left: 4px solid #f44336;'>
+                <h4 style='margin: 0; color: #c62828;'>🔴 建議停損 (SL)</h4>
+                <h2 style='margin: 5px 0; color: #c62828;'>{asset['Currency']} {result['sl_price']:.2f}</h2>
+                <p style='margin: 0; font-size: 12px; color: #666;'>風險: {result['current_risk']:.2f}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            col_tp.markdown(f"""
+            <div style='background-color: #e8f5e9; padding: 15px; border-radius: 10px; border-left: 4px solid #4caf50;'>
+                <h4 style='margin: 0; color: #2e7d32;'>🟢 建議停利 (TP)</h4>
+                <h2 style='margin: 5px 0; color: #2e7d32;'>{asset['Currency']} {result['tp_price']:.2f}</h2>
+                <p style='margin: 0; font-size: 12px; color: #666;'>目標: {result['current_reward']:.2f}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.divider()
+            
+            # Save button
+            if st.button("💾 應用建議並儲存", key=f"save_risk_{index}", type="primary"):
+                asset["Suggested_SL"] = result['sl_price']
+                asset["Suggested_TP"] = result['tp_price']
+                save_portfolio(st.session_state.portfolio)
+                st.success(f"✅ 已儲存 {asset['Ticker']} 的停損停利建議！")
+                st.rerun()
+
     with tab_del:
         if st.button("❌ 確認刪除", key=f"btn_del_{index}", type="primary"):
             st.session_state.portfolio.pop(index)
             save_portfolio(st.session_state.portfolio)
             st.session_state["force_refresh_market_data"] = True
             st.rerun()
+
 
 
 @st.dialog("➕ 新增資產")
@@ -159,18 +274,22 @@ def add_asset_dialog():
         atype = st.selectbox("類別", ["美股", "台股", "虛擬貨幣", "稀有金屬"])
     with c2:
         qty = st.number_input("數量", 0.0, 1.0)
-        curr = st.selectbox("幣別", ["USD", "TWD"], index=1 if ".TW" in ticker else 0)
+        curr = st.selectbox("幣別", ["Auto", "USD", "TWD"], index=0)
         cost = st.number_input("成本", 0.0, 100.0)
 
     if st.button("確認新增", type="primary", use_container_width=True):
         if ticker:
+            final_curr = curr
+            if final_curr == "Auto":
+                final_curr = "TWD" if ".TW" in ticker else "USD"
+
             st.session_state.portfolio.append(
                 {
                     "Type": atype,
                     "Ticker": ticker,
                     "Quantity": qty,
                     "Avg_Cost": cost,
-                    "Currency": curr,
+                    "Currency": final_curr,
                     "Manual_Price": 0.0,
                     "Last_Update": "N/A",
                 }
@@ -357,6 +476,107 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
             f"**{sel_cat}** 預算: `{c_symbol}{budget:,.0f}` | 已規劃: `{c_symbol}{planned_in_cat:,.0f}` | 剩餘: :blue[**{c_symbol}{remaining:,.0f}**]"
         )
 
+        # SL/TP Calculator
+        with st.expander("🎯 SL/TP 計算器 (風控輔助工具)", expanded=False):
+            st.caption("根據 ATR 和最大可接受損失計算建議的停損、停利和購買數量")
+            
+            col_calc1, col_calc2, col_calc3 = st.columns(3)
+            
+            calc_ticker = col_calc1.text_input(
+                "代號",
+                placeholder="如 AAPL",
+                key="sltp_calc_ticker"
+            ).upper()
+            
+            calc_entry_price = col_calc2.number_input(
+                "預計入場價格",
+                min_value=0.0,
+                value=100.0,
+                step=1.0,
+                key="sltp_calc_entry"
+            )
+            
+            calc_max_loss = col_calc3.number_input(
+                f"最大可接受損失 ({c_symbol})",
+                min_value=0.0,
+                value=1000.0,
+                step=100.0,
+                key="sltp_calc_max_loss"
+            )
+            
+            col_param1, col_param2 = st.columns(2)
+            calc_atr_mult = col_param1.slider(
+                "ATR 倍數",
+                min_value=1.0,
+                max_value=5.0,
+                value=2.0,
+                step=0.5,
+                key="sltp_calc_atr_mult"
+            )
+            
+            calc_r_ratio = col_param2.slider(
+                "R-Ratio",
+                min_value=1.0,
+                max_value=5.0,
+                value=2.0,
+                step=0.5,
+                key="sltp_calc_r_ratio"
+            )
+            
+            if st.button("🔍 計算建議", key="btn_calc_sltp", type="primary"):
+                if not calc_ticker:
+                    st.error("請輸入代號")
+                else:
+                    from modules.risk_management import calculate_atr, suggest_sl_tp_for_entry
+                    
+                    with st.spinner(f"正在計算 {calc_ticker} 的 ATR..."):
+                        atr_value = calculate_atr(calc_ticker)
+                        
+                        if atr_value:
+                            result = suggest_sl_tp_for_entry(
+                                entry_price=calc_entry_price,
+                                atr_value=atr_value,
+                                max_loss_amount=calc_max_loss,
+                                atr_multiplier=calc_atr_mult,
+                                r_ratio=calc_r_ratio
+                            )
+                            
+                            st.session_state["sltp_calc_result"] = result
+                            st.session_state["sltp_calc_ticker"] = calc_ticker
+                            st.success("✅ 計算完成！")
+                            st.rerun()
+                        else:
+                            st.error("❌ 無法獲取 ATR 數據，請檢查代號是否正確")
+            
+            # Display results
+            if "sltp_calc_result" in st.session_state:
+                result = st.session_state["sltp_calc_result"]
+                ticker = st.session_state.get("sltp_calc_ticker", "")
+                
+                st.divider()
+                st.markdown("### 📊 計算結果")
+                
+                col_r1, col_r2, col_r3, col_r4 = st.columns(4)
+                col_r1.metric("1R 距離", f"{result['one_r_distance']:.2f}")
+                col_r2.metric("🔴 停損價", f"{result['sl_price']:.2f}")
+                col_r3.metric("🟢 停利價", f"{result['tp_price']:.2f}")
+                col_r4.metric("📦 建議數量", f"{result['max_qty']:.2f}")
+                
+                st.info(f"""
+                **風險分析:**
+                - 風險金額: {c_symbol}{result['risk_amount']:,.2f}
+                - 潛在獲利: {c_symbol}{result['reward_amount']:,.2f}
+                - 風險回報比: 1:{calc_r_ratio}
+                """)
+                
+                # Button to use suggested quantity
+                if st.button("✅ 使用建議數量", key="btn_use_sltp_qty"):
+                    st.session_state["deploy_qty_override"] = result['max_qty']
+                    st.session_state["deploy_ticker_override"] = ticker
+                    st.session_state["deploy_price_override"] = calc_entry_price
+                    st.success(f"已設定數量為 {result['max_qty']:.2f}，請在下方確認並加入清單")
+                    st.rerun()
+
         # 操作區塊
         with st.container(border=True):
             col_act1, col_act2, col_act3, col_act4 = st.columns([1.5, 1, 1, 1])
@@ -371,15 +591,20 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
 
             target_ticker = ""
             if asset_opt == "➕ 新增資產...":
+                # Check if we have an override from SL/TP calculator
+                default_ticker = st.session_state.get("deploy_ticker_override", "")
                 target_ticker = col_act1.text_input(
-                    "輸入新代號", placeholder="如 AAPL", key="deploy_new_ticker"
+                    "輸入新代號", 
+                    value=default_ticker,
+                    placeholder="如 AAPL", 
+                    key="deploy_new_ticker"
                 ).upper()
             else:
                 target_ticker = asset_opt
 
             # 輸入交易細節
             # 預設單價 (若是現有資產，抓一下成本當參考)
-            ref_price = 100.0
+            ref_price = st.session_state.get("deploy_price_override", 100.0)
             if asset_opt != "➕ 新增資產...":
                 ref_item = next(
                     (p for p in st.session_state.portfolio if p["Ticker"] == asset_opt),
@@ -389,9 +614,12 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
                     ref_price = float(ref_item["Avg_Cost"])
 
             d_price = col_act2.number_input(
-                "單價", 0.0, value=ref_price, key="deploy_price"
+                "單價", 0.0, value=float(ref_price), key="deploy_price"
             )
-            d_qty = col_act3.number_input("數量", 0.0, value=1.0, key="deploy_qty")
+            
+            # Check for quantity override from SL/TP calculator
+            default_qty = st.session_state.get("deploy_qty_override", 1.0)
+            d_qty = col_act3.number_input("數量", 0.0, value=float(default_qty), key="deploy_qty")
 
             d_total = d_price * d_qty
             col_act4.markdown(f"總額: **{d_total:,.0f}**")
@@ -521,7 +749,7 @@ def render_asset_list_section(df_market_data, c_symbol):
 
     if not df_market_data.empty:
         # Select only columns that exist in df_market_data
-        merge_cols = ["Ticker", "Market_Value"]
+        merge_cols = ["Ticker", "Market_Value", "Avg_Cost"]
         if "Current_Price" in df_market_data.columns:
             merge_cols.append("Current_Price")
         if "Last_Update" in df_market_data.columns:
@@ -530,6 +758,12 @@ def render_asset_list_section(df_market_data, c_symbol):
         df_merged = pd.merge(
             df_raw, df_market_data[merge_cols], on="Ticker", how="left"
         )
+        
+        # Use converted Avg_Cost from market data if available
+        if "Avg_Cost_y" in df_merged.columns:
+            df_merged["Avg_Cost"] = df_merged["Avg_Cost_y"].fillna(df_merged["Avg_Cost_x"])
+            # We can drop the suffixes if we want to clean up, but Avg_Cost is what matters for display
+
         df_merged["Market_Value"] = df_merged["Market_Value"].fillna(0)
         
         # Add missing columns if they weren't in the merge
@@ -557,13 +791,14 @@ def render_asset_list_section(df_market_data, c_symbol):
         df_merged = df_merged.sort_values(by="Market_Value", ascending=False)
 
     # Header row
-    h1, h2, h3, h4, h5, h6 = st.columns([1.2, 0.8, 1, 1.2, 0.6, 0.8])
+    h1, h2, h3, h4, h5, h6, h7 = st.columns([1.2, 0.8, 1, 1.2, 1, 0.6, 0.8])
     h1.caption("**代號**")
     h2.caption("**數量**")
     h3.caption("**成本**")
     h4.caption("**現價 & 更新時間**")
-    h5.caption("**同步**")
-    h6.caption("**操作**")
+    h5.caption("**SL/TP**")
+    h6.caption("**同步**")
+    h7.caption("**操作**")
     st.divider()
 
     # 簡易渲染
@@ -587,8 +822,42 @@ def render_asset_list_section(df_market_data, c_symbol):
         is_outdated = check_is_outdated(last_update)
         update_color = "#FF8C00" if is_outdated else "#28a745"
         
+        # Get SL/TP values and convert to float
+        suggested_sl_raw = item.get("Suggested_SL")
+        suggested_tp_raw = item.get("Suggested_TP")
+        
+        # Convert to float, handling empty strings and None
+        suggested_sl = None
+        suggested_tp = None
+        
+        try:
+            if suggested_sl_raw and suggested_sl_raw != "" and suggested_sl_raw != "N/A":
+                suggested_sl = float(suggested_sl_raw)
+        except (ValueError, TypeError):
+            suggested_sl = None
+        
+        try:
+            if suggested_tp_raw and suggested_tp_raw != "" and suggested_tp_raw != "N/A":
+                suggested_tp = float(suggested_tp_raw)
+        except (ValueError, TypeError):
+            suggested_tp = None
+        
+        # Determine status indicator
+        status_indicator = "⚪"  # Default: no SL/TP set
+        status_text = "未設定"
+        if suggested_sl is not None and suggested_tp is not None and current_price > 0:
+            if current_price <= suggested_sl:
+                status_indicator = "🔴"
+                status_text = "觸及停損"
+            elif current_price >= suggested_tp:
+                status_indicator = "🟢"
+                status_text = "達到停利"
+            else:
+                status_indicator = "🟡"
+                status_text = "持有中"
+        
         with st.container():
-            c1, c2, c3, c4, c5, c6 = st.columns([1.2, 0.8, 1, 1.2, 0.6, 0.8])
+            c1, c2, c3, c4, c5, c6, c7 = st.columns([1.2, 0.8, 1, 1.2, 1, 0.6, 0.8])
             c1.markdown(f"**{item['Ticker']}**")
             c1.caption(f"{item['Type']}")
             c2.write(f"{item['Quantity']}")
@@ -605,8 +874,17 @@ def render_asset_list_section(df_market_data, c_symbol):
                     unsafe_allow_html=True
                 )
             
+            # Display SL/TP
+            with c5:
+                if suggested_sl is not None and suggested_tp is not None:
+                    st.markdown(f"{status_indicator} {status_text}")
+                    st.caption(f"SL: {suggested_sl:.2f} | TP: {suggested_tp:.2f}")
+                else:
+                    st.markdown("⚪ 未設定")
+                    st.caption("請至風控建議設定")
+            
             # Sync button to fetch individual price
-            if c5.button("🔄", key=f"sync_{idx}", help="同步最新價格"):
+            if c6.button("🔄", key=f"sync_{idx}", help="同步最新價格"):
                 from modules.market_service import fetch_single_price
                 from modules.data_loader import save_portfolio
                 from datetime import datetime
@@ -624,9 +902,10 @@ def render_asset_list_section(df_market_data, c_symbol):
                     else:
                         st.error(f"❌ 更新失敗: {error}")
             
-            if c6.button("⚙️", key=f"m_{idx}"):
+            if c7.button("⚙️", key=f"m_{idx}"):
                 asset_action_dialog(idx, item)
         st.divider()
+
 
 
 def render_manager(df_market_data, c_symbol, total_val):

@@ -36,6 +36,8 @@ class Asset(BaseModel):
     currency: Literal["USD", "TWD"] = Field(default="USD", description="Asset currency")
     manual_price: float = Field(default=0.0, ge=0, description="Manual price override")
     last_update: str = Field(default="N/A", description="Last update timestamp")
+    suggested_sl: Optional[float] = Field(default=None, description="Suggested stop loss price")
+    suggested_tp: Optional[float] = Field(default=None, description="Suggested take profit price")
     
     @field_validator('ticker')
     @classmethod
@@ -69,6 +71,8 @@ class Asset(BaseModel):
             "Currency": self.currency,
             "Manual_Price": self.manual_price,
             "Last_Update": self.last_update,
+            "Suggested_SL": self.suggested_sl if self.suggested_sl is not None else "",
+            "Suggested_TP": self.suggested_tp if self.suggested_tp is not None else "",
         }
     
     @classmethod
@@ -83,6 +87,16 @@ class Asset(BaseModel):
             Asset: Validated asset instance
         """
         # Handle both capitalized (CSV) and lowercase (internal) keys
+        # Helper to parse optional float fields
+        def parse_optional_float(key1: str, key2: str) -> Optional[float]:
+            val = data.get(key1) or data.get(key2)
+            if val is None or val == "" or val == "N/A":
+                return None
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return None
+        
         return cls(
             type=data.get("Type") or data.get("type"),
             ticker=data.get("Ticker") or data.get("ticker"),
@@ -91,6 +105,8 @@ class Asset(BaseModel):
             currency=data.get("Currency") or data.get("currency", "USD"),
             manual_price=float(data.get("Manual_Price") or data.get("manual_price", 0)),
             last_update=data.get("Last_Update") or data.get("last_update", "N/A"),
+            suggested_sl=parse_optional_float("Suggested_SL", "suggested_sl"),
+            suggested_tp=parse_optional_float("Suggested_TP", "suggested_tp"),
         )
 
 

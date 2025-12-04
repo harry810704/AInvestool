@@ -82,6 +82,34 @@ def search_yahoo_ticker(query: str) -> List[str]:
         return []
 
 
+def fetch_historical_data(ticker: str, period: str = '1mo', interval: str = '1d') -> pd.DataFrame:
+    """
+    Fetch historical OHLCV data for a ticker.
+    
+    Args:
+        ticker: Stock ticker symbol
+        period: Data period (e.g., '1mo', '3mo', '6mo', '1y')
+        interval: Data interval (e.g., '1d', '1h', '5m')
+        
+    Returns:
+        pd.DataFrame: DataFrame with columns [Open, High, Low, Close, Volume]
+                     Returns empty DataFrame if fetch fails
+    """
+    try:
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period=period, interval=interval)
+        
+        if not hist.empty:
+            logger.debug(f"Fetched {len(hist)} rows of historical data for {ticker}")
+            return hist
+        
+        logger.warning(f"No historical data available for {ticker}")
+        return pd.DataFrame()
+    except Exception as e:
+        logger.error(f"Failed to fetch historical data for {ticker}: {e}")
+        return pd.DataFrame()
+
+
 def fetch_single_price(ticker: str) -> Tuple[bool, float, Optional[str]]:
     """
     Fetch current price for a single ticker.
@@ -302,7 +330,7 @@ def get_market_data(
             "Daily_Change (%)": daily_change_pct * 100,
             "History": history_data,
             "Status": status,
-            "Avg_Cost": item["Avg_Cost"],
+            "Avg_Cost": final_avg_cost,
             "Currency": asset_currency,
             "Last_Update": item.get("Last_Update", "N/A"),
         })
