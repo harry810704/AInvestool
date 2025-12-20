@@ -18,7 +18,7 @@ from modules.drive_manager import (
     credentials_from_dict,
     get_user_info,
 )
-from modules.data_loader import load_portfolio, save_portfolio, load_allocation_settings
+from modules.data_loader import load_portfolio, save_portfolio, load_allocation_settings, load_accounts, save_accounts
 from modules.market_service import (
     get_exchange_rate,
     get_market_data,
@@ -229,6 +229,8 @@ if not state.load_portfolio and not state.portfolio:
         # Load allocation settings from local file or use defaults
         state.allocation_targets = config.allocation.targets.copy()
         state.portfolio = portfolio
+        # Load local accounts if possible, else default
+        st.session_state.accounts = load_accounts() # data_loader handles local fallback
     else:
         # Production mode: load from Google Drive
         logger.info("Loading portfolio from Google Drive")
@@ -249,6 +251,11 @@ if not state.load_portfolio and not state.portfolio:
                 }]
                 save_portfolio(portfolio)
             state.portfolio = portfolio
+            
+            # Load accounts
+            logger.info("Loading accounts")
+            st.session_state.accounts = load_accounts()
+            
     state.load_portfolio = True
     # Force market data refresh when portfolio is loaded
     st.session_state["force_refresh_market_data"] = True
@@ -313,13 +320,17 @@ with st.sidebar:
     st.write(f"匯率參考: 1 USD ≈ {current_usd_twd:.2f} TWD")
     display_currency = st.radio(
         "顯示幣別",
-        ["TWD (新台幣)", "USD (美金)"],
-        horizontal=True
+        config.ui.currencies, # ["Auto", "USD", "TWD"]
+        horizontal=True,
+        index=0
     )
     st.divider()
 
-target_curr_code = "TWD" if "TWD" in display_currency else "USD"
-c_symbol = config.ui.currency_symbols.get(target_curr_code, "$")
+target_curr_code = display_currency.split()[0] if " " in display_currency else display_currency
+# If Auto, symbol is mixed, but c_symbol usually passed to components for Total.
+# If Auto, Total is TWD (Base).
+c_symbol_key = target_curr_code if target_curr_code != "Auto" else "TWD"
+c_symbol = config.ui.currency_symbols.get(c_symbol_key, "$")
 
 # Get market data - only fetch on initial load or when explicitly requested
 # Check if we need to fetch market data
@@ -335,7 +346,8 @@ if need_fetch:
     logger.info("Fetching market data")
     if state.portfolio:
         df_all = get_market_data(state.portfolio, target_curr_code, current_usd_twd)
-        total_val = df_all["Market_Value"].sum() if not df_all.empty else 0
+        # Use Net_Value for Total (Net Worth)
+        total_val = df_all["Net_Value"].sum() if not df_all.empty else 0
     else:
         df_all = pd.DataFrame()
         total_val = 0

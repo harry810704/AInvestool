@@ -19,7 +19,7 @@ from modules.drive_manager import (
 )
 from modules.logger import get_logger
 from modules.exceptions import DriveServiceError, DataValidationError
-from models import Asset, AllocationSettings
+from models import Asset, AllocationSettings, Account
 from config import get_config
 
 logger = get_logger(__name__)
@@ -76,6 +76,10 @@ def load_portfolio() -> List[dict]:
             # Validate using Asset model
             try:
                 asset = Asset.from_dict(item)
+                # Migration: Assign default account if missing
+                if not asset.account_id:
+                    asset.account_id = "default_main"
+                
                 normalized_data.append(asset.to_dict())
             except Exception as e:
                 logger.warning(f"Skipping invalid asset {item.get('Ticker', 'unknown')}: {e}")
@@ -216,3 +220,74 @@ def save_allocation_settings(settings: Dict[str, float]) -> None:
             "Failed to save allocation settings to Google Drive",
             details=str(e)
         )
+
+def load_accounts() -> List[dict]:
+    """
+    Load accounts from Google Drive.
+    If no accounts exist, creates a default one.
+    
+    Returns:
+        List[dict]: List of account dictionaries
+    """
+    service = get_service()
+    if not service:
+        # Defaults for offline/dev mode or first run without drive
+        return [Account(id="default_main", name="主要帳戶", type="投資帳戶", currency="TWD").to_dict()]
+
+    try:
+        data = read_json_from_drive(service, config.google_drive.accounts_filename)
+        
+        if not data:
+            logger.info("No accounts found, creating default")
+            default_acc = Account(id="default_main", name="主要帳戶", type="投資帳戶", currency="TWD")
+            accounts = [default_acc.to_dict()]
+            save_json_to_drive(service, config.google_drive.accounts_filename, accounts)
+            return accounts
+        
+        # Validate keys
+        valid_accounts = []
+        for item in data:
+            try:
+                acc = Account.from_dict(item)
+                valid_accounts.append(acc.to_dict())
+            except Exception as e:
+                logger.warning(f"Invalid account data: {item}, error: {e}")
+        
+        if not valid_accounts:
+             # Fallback if file exists but is empty/invalid
+            default_acc = Account(id="default_main", name="主要帳戶", type="投資帳戶", currency="TWD")
+            valid_accounts = [default_acc.to_dict()]
+            
+        return valid_accounts
+            
+    except Exception as e:
+        logger.error(f"Failed to load accounts: {e}")
+        # Return default to allow app to function
+        return [Account(id="default_main", name="主要帳戶", type="投資帳戶", currency="TWD").to_dict()]
+
+
+def save_accounts(accounts: List[dict]) -> None:
+    """
+    Save accounts to Google Drive.
+    
+    Args:
+        accounts: List of account dictionaries
+    """
+    service = get_service()
+    if not service:
+        logger.error("Cannot save accounts: No Drive service available")
+        return # Or raise error
+    
+    try:
+        # Validate
+        validated = []
+        for item in accounts:
+            acc = Account.from_dict(item)
+            validated.append(acc.to_dict())
+            
+        save_json_to_drive(service, config.google_drive.accounts_filename, validated)
+        logger.info(f"Saved {len(validated)} accounts")
+        
+    except Exception as e:
+        logger.error(f"Failed to save accounts: {e}")
+        raise DriveServiceError("Failed to save accounts", details=str(e))

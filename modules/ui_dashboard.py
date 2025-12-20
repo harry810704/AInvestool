@@ -30,15 +30,30 @@ def render_dashboard(df_all: pd.DataFrame, c_symbol: str, total_val: float) -> N
         return
 
     # 1. KPI 區塊
-    st.markdown("### 🏆 總資產概況")
-    g_cost = df_all['Total_Cost'].sum()
-    g_pl = df_all['Unrealized_PL'].sum()
+    st.markdown("### 🏆 總資產概況 (Net Worth)")
+    # For KPIs, we use the Base Currency (total_val is already Net Worth in Base)
+    # But we might want to separate Assets and Liabilities
+    
+    # Calculate Total Assets (Positive Net Value) and Total Liabilities (Negative Net Value) (approx)
+    # Better: Filter by Type
+    assets_val = df_all[df_all['Type'] != '負債']['Market_Value'].sum()
+    liabilities_val = df_all[df_all['Type'] == '負債']['Market_Value'].sum()
+    
+    # Total Cost logic:
+    # Assets Cost is positive. Liabilities Cost (Principal) is positive in data, but debts.
+    # KPI Logic: 
+    # Net Worth = Assets - Liabilities.
+    # Total Invested = Assets Cost.
+    # Liability Principal is separate.
+    
+    g_cost = df_all[df_all['Type'] != '負債']['Total_Cost'].sum()
+    g_pl = df_all['Unrealized_PL'].sum() # PL of Assets + PL of Liabilities
     g_roi = (g_pl / g_cost) * 100 if g_cost > 0 else 0
     
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric("總資產現值", f"{c_symbol}{total_val:,.0f}")
-    kpi2.metric("總投入成本", f"{c_symbol}{g_cost:,.0f}")
-    kpi3.metric("未實現損益", f"{c_symbol}{g_pl:,.0f}", delta_color="normal")
+    kpi1.metric("淨資產", f"{c_symbol}{total_val:,.0f}", help=f"資產: {c_symbol}{assets_val:,.0f} | 負債: {c_symbol}{liabilities_val:,.0f}")
+    kpi2.metric("總投入成本", f"{c_symbol}{g_cost:,.0f}", help="(僅計算資產端)")
+    kpi3.metric("總損益", f"{c_symbol}{g_pl:,.0f}", delta_color="normal")
     kpi4.metric("總報酬率 (ROI)", f"{g_roi:.2f}%", delta=f"{g_roi:.2f}%")
     
     st.divider()
@@ -171,6 +186,9 @@ def render_category_overview(df_all: pd.DataFrame, total_val: float, c_symbol: s
                     st.subheader(f"📂 {row['Type']}")
                 
                 with c2:
+                    # Logic for Display Value (Native vs Base) is tricky for Category Aggregation.
+                    # Category Sum implies Base Currency always, because you can't sum mixed currencies.
+                    # So Overview always uses Base Currency.
                     st.markdown(f"**{c_symbol}{row['Market_Value']:,.0f}**")
                     st.progress(min(type_weight / 100, 1.0))
                     st.caption(f"全資產佔比: {type_weight:.1f}%")
@@ -254,14 +272,21 @@ def render_single_category_detail(df_all: pd.DataFrame, total_val: float, c_symb
                     st.caption(f"🕒 更新: {last_update}")
                 
                 with c2:
-                    st.markdown(f"**{c_symbol}{row['Market_Value']:,.0f}**")
-                    st.caption(f"現價: {row['Current_Price']:,.2f}")
+                    # Use Display Columns if available
+                    d_mv = row.get("Display_Market_Value", row['Market_Value'])
+                    d_curr = row.get("Display_Currency", row.get("Currency", "USD"))
+                    d_sym = config.ui.currency_symbols.get(d_curr, "$")
+                    d_price = row.get("Display_Price", row['Current_Price'])
+                    
+                    st.markdown(f"**{d_sym}{d_mv:,.0f}**")
+                    st.caption(f"現價: {d_price:,.2f}")
                     st.progress(min(weight_in_cat / 100, 1.0))
                     st.caption(f"類別佔比: {weight_in_cat:.0f}%") # 這是個股在該類別的佔比
 
                 with c3:
-                    pl_c = "green" if row['Unrealized_PL'] > 0 else "red"
-                    st.markdown(f"<span style='color:{pl_c}; font-weight:bold'>{c_symbol}{row['Unrealized_PL']:,.0f}</span>", unsafe_allow_html=True)
+                    d_pl = row.get("Display_PL", row['Unrealized_PL'])
+                    pl_c = "green" if d_pl > 0 else "red"
+                    st.markdown(f"<span style='color:{pl_c}; font-weight:bold'>{d_sym}{d_pl:,.0f}</span>", unsafe_allow_html=True)
                     roi_bg = "#e6fffa" if row['ROI (%)'] > 0 else "#fff5f5"
                     roi_color = "#009688" if row['ROI (%)'] > 0 else "#e53e3e"
                     st.markdown(f"<div style='background-color:{roi_bg}; color:{roi_color}; padding:4px; border-radius:4px; text-align:center; width:80%; font-size:12px; font-weight:bold'>{row['ROI (%)']:.1f}%</div>", unsafe_allow_html=True)

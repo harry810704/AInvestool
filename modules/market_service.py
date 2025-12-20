@@ -183,12 +183,16 @@ def auto_update_portfolio(portfolio: List[dict]) -> Tuple[int, int, List[dict]]:
     # Find outdated items
     outdated_items = []
     for i, item in enumerate(portfolio):
+        # Skip Cash and Liability for auto-updates
+        if item.get("Type") in ["現金", "負債"]:
+            continue
+            
         if "Last_Update" not in item:
             item["Last_Update"] = "N/A"
         
         if check_is_outdated(item["Last_Update"]):
             outdated_items.append((i, item))
-    
+            
     if not outdated_items:
         logger.info("No outdated assets to update")
         return 0, 0, portfolio
@@ -251,8 +255,12 @@ def get_market_data(
     logger.info(f"Fetching market data for {len(portfolio)} assets")
     data_list = []
     
+    # Determine Base Currency for aggregation (default to TWD if Auto)
+    base_currency = "TWD" if target_currency == "Auto" else target_currency
+    
     for item in portfolio:
         ticker = item["Ticker"]
+        asset_type = item["Type"] # Added access to Type
         asset_currency = item.get("Currency", "USD")
         manual_price = item.get("Manual_Price", 0.0)
         last_update = item.get("Last_Update", "N/A")
@@ -262,77 +270,143 @@ def get_market_data(
         history_data = pd.Series()
         status = "⚠️ 待更新"
         
-        # Check if we have fresh cached data (within 24 hours)
-        is_outdated = check_is_outdated(last_update)
-        
-        if not is_outdated and manual_price > 0:
-            # Use cached price - no need to fetch from Yahoo Finance
-            current_price = manual_price
-            status = "💾 快取 (24h內)"
-            logger.debug(f"Using cached price for {ticker}: {manual_price}")
-            
-            # Generate dummy history for cached data
-            dates = pd.date_range(end=datetime.today(), periods=30)
-            history_data = pd.Series([current_price] * 30, index=dates)
+        # Skip Yahoo fetch for Cash/Liability
+        if asset_type in ["現金", "負債"]:
+             # For Cash/Liability, Price is usually 1 (face value) or Manual Price
+             # If Manual Price is set, use it. Otherwise default to 1.
+             if manual_price > 0:
+                 current_price = manual_price
+             else:
+                 current_price = 1.0 # Default face value
+                 
+             status = "✅ 手動"
+             # Dummy history
+             dates = pd.date_range(end=datetime.today(), periods=30)
+             history_data = pd.Series([current_price] * 30, index=dates)
+             
         else:
-            # Try to fetch live data (price is outdated or not available)
-            try:
-                stock = yf.Ticker(ticker)
-                hist = stock.history(period="1mo")
+            # Existing logic for standard assets
+            # Check if we have fresh cached data (within 24 hours)
+            is_outdated = check_is_outdated(last_update)
+            
+            if not is_outdated and manual_price > 0:
+                # Use cached price
+                current_price = manual_price
+                status = "💾 快取 (24h內)"
+                logger.debug(f"Using cached price for {ticker}: {manual_price}")
                 
-                if not hist.empty:
-                    raw_price = hist["Close"].iloc[-1]
-                    raw_prev = hist["Close"].iloc[-2] if len(hist) > 1 else raw_price
-                    daily_change_pct = (raw_price - raw_prev) / raw_prev if raw_prev > 0 else 0
-                    history_data = hist["Close"]
-                    current_price = raw_price
-                    status = "✅ 即時"
-                else:
-                    raise Exception("No Data")
-            except Exception as e:
-                logger.debug(f"Live data unavailable for {ticker}: {e}")
-                status = "⚠️ 手動/舊資料"
-                
-                if manual_price > 0:
-                    current_price = manual_price
-                else:
-                    current_price = item["Avg_Cost"]
-                    status = "⚠️ 僅顯示成本"
-                
-                # Generate dummy history
                 dates = pd.date_range(end=datetime.today(), periods=30)
                 history_data = pd.Series([current_price] * 30, index=dates)
+            else:
+                try:
+                    stock = yf.Ticker(ticker)
+                    hist = stock.history(period="1mo")
+                    
+                    if not hist.empty:
+                        raw_price = hist["Close"].iloc[-1]
+                        raw_prev = hist["Close"].iloc[-2] if len(hist) > 1 else raw_price
+                        daily_change_pct = (raw_price - raw_prev) / raw_prev if raw_prev > 0 else 0
+                        history_data = hist["Close"]
+                        current_price = raw_price
+                        status = "✅ 即時"
+                    else:
+                        raise Exception("No Data")
+                except Exception as e:
+                    logger.debug(f"Live data unavailable for {ticker}: {e}")
+                    status = "⚠️ 手動/舊資料"
+                    
+                    if manual_price > 0:
+                        current_price = manual_price
+                    else:
+                        current_price = item["Avg_Cost"]
+                        status = "⚠️ 僅顯示成本"
+                    
+                    dates = pd.date_range(end=datetime.today(), periods=30)
+                    history_data = pd.Series([current_price] * 30, index=dates)
         
-        # Currency conversion
+        # --- Currency Conversion Logic ---
+        # 1. Calculate Multiplier to Base Currency (for Aggregation)
         rate_multiplier = 1.0
-        if target_currency == "TWD" and asset_currency == "USD":
+        if base_currency == "TWD" and asset_currency == "USD":
             rate_multiplier = usd_twd_rate
-        elif target_currency == "USD" and asset_currency == "TWD":
+        elif base_currency == "USD" and asset_currency == "TWD":
             rate_multiplier = 1.0 / usd_twd_rate if usd_twd_rate > 0 else 1.0
         
-        # Calculate metrics
-        final_price = current_price * rate_multiplier
-        final_avg_cost = item["Avg_Cost"] * rate_multiplier
-        market_value = final_price * item["Quantity"]
-        total_cost = final_avg_cost * item["Quantity"]
-        unrealized_pl = market_value - total_cost
-        roi = (unrealized_pl / total_cost) * 100 if total_cost > 0 else 0
+        # Standard Metrics in Base Currency (e.g. TWD)
+        base_price = current_price * rate_multiplier
+        base_avg_cost = item["Avg_Cost"] * rate_multiplier
+        
+        market_value_base = base_price * item["Quantity"]
+        total_cost_base = base_avg_cost * item["Quantity"]
+        
+        # Net Value logic: Liabilities are negative contribution to Net Worth
+        net_value_base = -market_value_base if asset_type == "負債" else market_value_base
+        
+        unrealized_pl_base = market_value_base - total_cost_base
+        # For liability: PL is Debt Decrease? Or Debt Increase is Loss?
+        # Usually: Cost (Principal) - Current (Balance). If Balance > Cost, Loss.
+        # PL = Cost - MarketValue? 
+        # If I borrowed 100 (Cost), now owe 110 (MarketValue), PL is -10.
+        # So PL = Cost - MarketValue logic works for Liability?
+        # Let's check: 100 (Cost) - 110 (Val) = -10. Correct.
+        # For Asset: 110 (Val) - 100 (Cost) = 10.
+        if asset_type == "負債":
+             unrealized_pl_base = total_cost_base - market_value_base
+        
+        roi = (unrealized_pl_base / total_cost_base) * 100 if total_cost_base > 0 else 0
+        
+        # 2. Calculate Display Values
+        # If Auto, use Native. Else use Base.
+        display_curr_code = asset_currency if target_currency == "Auto" else base_currency
+        
+        if target_currency == "Auto":
+            # Display is Native
+            display_price = current_price
+            display_cost_basis = item["Avg_Cost"]
+            display_market_value = current_price * item["Quantity"]
+            display_total_cost = display_cost_basis * item["Quantity"]
+            
+            if asset_type == "負債":
+                display_pl = display_total_cost - display_market_value
+            else:
+                display_pl = display_market_value - display_total_cost
+        else:
+            # Display is Base (Converted)
+            display_price = base_price
+            display_cost_basis = base_avg_cost
+            display_market_value = market_value_base
+            display_total_cost = total_cost_base
+            display_pl = unrealized_pl_base
+
         
         data_list.append({
-            "Type": item["Type"],
+            "Type": asset_type,
             "Ticker": ticker,
             "Quantity": item["Quantity"],
-            "Current_Price": final_price,
-            "Market_Value": market_value,
-            "Total_Cost": total_cost,
-            "Unrealized_PL": unrealized_pl,
+            
+            # Base Columns (Used for Totals/Sorting)
+            "Current_Price": base_price,
+            "Market_Value": market_value_base, 
+            "Net_Value": net_value_base, # New column for Net Worth
+            "Total_Cost": total_cost_base,
+            "Unrealized_PL": unrealized_pl_base,
+            
+            # Display Columns (Used for UI showing)
+            "Display_Price": display_price,
+            "Display_Cost_Basis": display_cost_basis,
+            "Display_Market_Value": display_market_value,
+            "Display_Total_Cost": display_total_cost,
+            "Display_PL": display_pl,
+            "Display_Currency": display_curr_code,
+            
             "ROI (%)": roi,
             "Daily_Change (%)": daily_change_pct * 100,
             "History": history_data,
             "Status": status,
-            "Avg_Cost": final_avg_cost,
+            "Avg_Cost": base_avg_cost, # Keep for backward compat, but use Display_Cost_Basis in UI
             "Currency": asset_currency,
             "Last_Update": item.get("Last_Update", "N/A"),
+            "Account_ID": item.get("Account_ID", "default_main"),
         })
     
     logger.info(f"Market data fetched for {len(data_list)} assets")

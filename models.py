@@ -10,18 +10,66 @@ from typing import Optional, Literal
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
+
+class Account(BaseModel):
+    """
+    Represents a financial account (e.g., Bank Account, Brokerage, Credit Card).
+    
+    Attributes:
+        id: Unique identifier for the account
+        name: Account name (e.g., "Chase Checking", "Fidelity")
+        type: Account type (e.g., "現金帳戶", "投資帳戶", "信用帳戶")
+        balance: Current balance (optional, mainly calculated from assets)
+        currency: Base currency for the account
+    """
+    model_config = ConfigDict(validate_assignment=True)
+    
+    id: str = Field(..., description="Unique Account ID")
+    name: str = Field(..., description="Account Name")
+    type: str = Field(..., description="Account Type")
+    currency: str = Field(default="TWD", description="Base Currency")
+    
+    @field_validator('type')
+    @classmethod
+    def validate_type(cls, v: str) -> str:
+        """Validate account type against known categories."""
+        valid_types = ["現金帳戶", "投資帳戶", "信用帳戶"]
+        if v not in valid_types:
+            import warnings
+            warnings.warn(f"Account type '{v}' is not in standard types: {valid_types}")
+        return v
+    
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "type": self.type,
+            "currency": self.currency
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> "Account":
+        return cls(
+            id=data.get("id", ""),
+            name=data.get("name", ""),
+            type=data.get("type", "投資帳戶"),
+            currency=data.get("currency", "TWD")
+        )
+
+
 class Asset(BaseModel):
     """
     Represents a single investment asset in the portfolio.
     
     Attributes:
-        type: Asset category (e.g., "美股", "台股", "虛擬貨幣", "稀有金屬")
-        ticker: Stock ticker symbol (e.g., "AAPL", "2330.TW")
+        type: Asset category (e.g., "美股", "台股", "虛擬貨幣", "稀有金屬", "現金", "負債")
+        ticker: Stock ticker symbol or Unique ID
         quantity: Number of shares/units held
         avg_cost: Average cost per share/unit
         currency: Currency of the asset (USD or TWD)
         manual_price: Manually set price (0.0 if using live data)
         last_update: Last price update timestamp (ISO format or "N/A")
+        account_id: ID of the account this asset belongs to
     """
     
     model_config = ConfigDict(
@@ -30,7 +78,7 @@ class Asset(BaseModel):
     )
     
     type: str = Field(..., description="Asset category")
-    ticker: str = Field(..., description="Stock ticker symbol", min_length=1)
+    ticker: str = Field(..., description="Stock ticker symbol or ID", min_length=1)
     quantity: float = Field(..., ge=0, description="Number of shares/units")
     avg_cost: float = Field(..., ge=0, description="Average cost per share")
     currency: Literal["USD", "TWD"] = Field(default="USD", description="Asset currency")
@@ -38,6 +86,7 @@ class Asset(BaseModel):
     last_update: str = Field(default="N/A", description="Last update timestamp")
     suggested_sl: Optional[float] = Field(default=None, description="Suggested stop loss price")
     suggested_tp: Optional[float] = Field(default=None, description="Suggested take profit price")
+    account_id: Optional[str] = Field(default=None, description="Linked Account ID")
     
     @field_validator('ticker')
     @classmethod
@@ -49,7 +98,7 @@ class Asset(BaseModel):
     @classmethod
     def validate_type(cls, v: str) -> str:
         """Validate asset type against known categories."""
-        valid_types = ["美股", "台股", "虛擬貨幣", "稀有金屬"]
+        valid_types = ["美股", "台股", "虛擬貨幣", "稀有金屬", "現金", "負債"]
         if v not in valid_types:
             # Allow custom types but warn
             import warnings
@@ -63,7 +112,7 @@ class Asset(BaseModel):
         Returns:
             dict: Dictionary with capitalized keys matching CSV format
         """
-        return {
+        d = {
             "Type": self.type,
             "Ticker": self.ticker,
             "Quantity": self.quantity,
@@ -74,6 +123,9 @@ class Asset(BaseModel):
             "Suggested_SL": self.suggested_sl if self.suggested_sl is not None else "",
             "Suggested_TP": self.suggested_tp if self.suggested_tp is not None else "",
         }
+        if self.account_id:
+            d["Account_ID"] = self.account_id
+        return d
     
     @classmethod
     def from_dict(cls, data: dict) -> "Asset":
@@ -107,7 +159,9 @@ class Asset(BaseModel):
             last_update=data.get("Last_Update") or data.get("last_update", "N/A"),
             suggested_sl=parse_optional_float("Suggested_SL", "suggested_sl"),
             suggested_tp=parse_optional_float("Suggested_TP", "suggested_tp"),
+            account_id=data.get("Account_ID") or data.get("account_id"),
         )
+
 
 
 class MarketData(BaseModel):

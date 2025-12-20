@@ -23,6 +23,7 @@ class GoogleDriveConfig:
     folder_name: str = "AInvestool"
     portfolio_filename: str = "my_portfolio.csv"
     settings_filename: str = "allocation_settings.json"
+    accounts_filename: str = "accounts.json"
 
 
 @dataclass
@@ -73,14 +74,17 @@ class UIConfig:
     layout: str = "wide"
     
     # Asset types
-    asset_types: List[str] = field(default_factory=lambda: ["美股", "台股", "虛擬貨幣", "稀有金屬"])
+    asset_types: List[str] = field(default_factory=lambda: ["美股", "台股", "虛擬貨幣", "稀有金屬", "現金", "負債"])
+    
+    # Account types
+    account_types: List[str] = field(default_factory=lambda: ["現金帳戶", "投資帳戶", "信用帳戶"])
     
     # Currency options
-    currencies: List[str] = field(default_factory=lambda: ["USD", "TWD"])
+    currencies: List[str] = field(default_factory=lambda: ["Auto", "USD", "TWD"])
     currency_symbols: Dict[str, str] = field(default_factory=lambda: {"USD": "$", "TWD": "NT$"})
     
     # Display settings
-    default_currency: str = "TWD"
+    default_currency: str = "Auto"
     
     # Colors (for charts and UI)
     colors: Dict[str, str] = field(default_factory=lambda: {
