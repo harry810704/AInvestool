@@ -45,6 +45,58 @@ st.set_page_config(
 
 logger.info("Application started")
 
+# Inject Global Custom CSS
+st.markdown("""
+<style>
+    /* Card Styling */
+    div[data-testid="stMetric"], div.css-card {
+        background-color: #ffffff;
+        border: 1px solid #e0e0e0;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        transition: all 0.3s ease;
+    }
+    div[data-testid="stMetric"]:hover, div.css-card:hover {
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    }
+
+    /* Table Styling */
+    div[data-testid="stDataFrame"] {
+        border: 1px solid #f0f2f6;
+        border-radius: 10px;
+        padding: 5px;
+    }
+
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 20px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: transparent;
+        border-radius: 5px 5px 0 0;
+        font-size: 16px;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #f0f2f6;
+        border-bottom: 2px solid #5D69B1;
+    }
+
+    /* Button Styling */
+    button[kind="primary"] {
+        background-color: #5D69B1;
+        border-color: #5D69B1;
+    }
+    button[kind="primary"]:hover {
+        background-color: #4A569D;
+        border-color: #4A569D;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Initialize Cookie Manager
 cookie_manager = stx.CookieManager()
 
