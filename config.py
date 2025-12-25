@@ -21,9 +21,14 @@ class GoogleDriveConfig:
         "https://www.googleapis.com/auth/userinfo.profile",
     ])
     folder_name: str = "AInvestool"
-    portfolio_filename: str = "my_portfolio.csv"
-    settings_filename: str = "allocation_settings.json"
-    accounts_filename: str = "accounts.json"
+    portfolio_filename: str = "my_portfolio.xlsx"
+    settings_filename: str = "allocation_settings.xlsx"
+    accounts_filename: str = "accounts.xlsx"
+
+    # Legacy filenames for migration
+    legacy_portfolio_filename: str = "my_portfolio.csv"
+    legacy_settings_filename: str = "allocation_settings.json"
+    legacy_accounts_filename: str = "accounts.json"
 
 
 @dataclass
