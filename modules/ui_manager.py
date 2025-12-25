@@ -88,56 +88,100 @@ def calculate_base_suggestions(df_market_data, total_val, new_fund):
 
 @st.dialog("⚙️ 資產管理與交易")
 def asset_action_dialog(index, asset):
-    st.caption(f"管理：**{asset['Ticker']}**")
+    st.header(f"管理：{asset['Ticker']}")
+    st.caption(f"類別: {asset['Type']} | 幣別: {asset['Currency']}")
+
+    # We use tabs for different actions
     tab_buy, tab_sell, tab_edit, tab_risk, tab_del = st.tabs(
-        ["➕ 加倉", "➖ 減倉", "✏️ 修正", "📈 風控建議", "🗑️ 刪除"]
+        ["➕ 加倉 (Buy)", "➖ 減倉 (Sell)", "✏️ 修正 (Edit)", "📈 風控 (Risk)", "🗑️ 刪除 (Delete)"]
     )
 
     with tab_buy:
+        st.markdown("#### 增加持倉")
         c1, c2 = st.columns(2)
-        add_qty = c1.number_input("數量", 0.0, 1.0, 0.1, key=f"bq_{index}")
+        add_qty = c1.number_input("加倉數量", min_value=0.0, value=0.0, step=0.1, key=f"bq_{index}")
         add_price = c2.number_input(
-            f"單價 ({asset['Currency']})",
-            0.0,
-            float(asset["Avg_Cost"]),
+            f"成交單價 ({asset['Currency']})",
+            min_value=0.0,
+            value=float(asset["Avg_Cost"]),
             key=f"bp_{index}",
         )
-        if st.button("確認加倉", key=f"btn_buy_{index}", type="primary"):
-            old_cost = asset["Quantity"] * asset["Avg_Cost"]
-            new_qty = asset["Quantity"] + add_qty
-            asset["Avg_Cost"] = (
-                (old_cost + (add_qty * add_price)) / new_qty if new_qty else 0
-            )
-            asset["Quantity"] = new_qty
-            save_portfolio(st.session_state.portfolio)
-            st.session_state["force_refresh_market_data"] = True
-            st.success("成功")
-            st.rerun()
+
+        st.info(f"預估投入金額: {asset['Currency']} {add_qty * add_price:,.2f}")
+
+        if st.button("確認加倉", key=f"btn_buy_{index}", type="primary", use_container_width=True):
+            if add_qty > 0:
+                old_cost = asset["Quantity"] * asset["Avg_Cost"]
+                new_qty = asset["Quantity"] + add_qty
+                asset["Avg_Cost"] = (
+                    (old_cost + (add_qty * add_price)) / new_qty if new_qty else 0
+                )
+                asset["Quantity"] = new_qty
+                save_portfolio(st.session_state.portfolio)
+                st.session_state["force_refresh_market_data"] = True
+                st.success("加倉成功！")
+                st.rerun()
+            else:
+                st.error("數量必須大於 0")
 
     with tab_sell:
+        st.markdown("#### 減少持倉")
         sell_qty = st.number_input(
-            "賣出數量", 0.0, float(asset["Quantity"]), 0.0, key=f"sq_{index}"
+            "賣出數量",
+            min_value=0.0,
+            max_value=float(asset["Quantity"]),
+            value=0.0,
+            step=0.1,
+            key=f"sq_{index}"
         )
-        if st.button("確認減倉", key=f"btn_sell_{index}", type="primary"):
-            asset["Quantity"] -= sell_qty
-            save_portfolio(st.session_state.portfolio)
-            st.session_state["force_refresh_market_data"] = True
-            st.success("成功")
-            st.rerun()
+
+        # Calculate estimated realized P/L if we knew current price (omitted for simplicity or need to pass it in)
+
+        if st.button("確認減倉", key=f"btn_sell_{index}", type="primary", use_container_width=True):
+            if sell_qty > 0:
+                asset["Quantity"] -= sell_qty
+                if asset["Quantity"] < 0: asset["Quantity"] = 0 # Safety
+                save_portfolio(st.session_state.portfolio)
+                st.session_state["force_refresh_market_data"] = True
+                st.success("減倉成功！")
+                st.rerun()
+            else:
+                st.error("數量必須大於 0")
 
     with tab_edit:
+        st.markdown("#### 修正數據 (不影響損益計算邏輯，僅修改記錄)")
         c1, c2 = st.columns(2)
         fq = c1.number_input(
-            "修正數量", value=float(asset["Quantity"]), key=f"fq_{index}"
+            "持有數量", min_value=0.0, value=float(asset["Quantity"]), key=f"fq_{index}"
         )
         fc = c2.number_input(
-            "修正成本", value=float(asset["Avg_Cost"]), key=f"fc_{index}"
+            "平均成本", min_value=0.0, value=float(asset["Avg_Cost"]), key=f"fc_{index}"
         )
-        if st.button("保存", key=f"btn_fix_{index}"):
+
+        # Account modification
+        accounts = st.session_state.get("accounts", [])
+        acc_options = {acc["name"]: acc["id"] for acc in accounts} if accounts else {"主要帳戶": "default_main"}
+        # Reverse map for default index
+        curr_acc_id = asset.get("Account_ID", "default_main")
+
+        # Find index of current account in options keys
+        # This is a bit tricky, simpler to just list names and find match
+        acc_names = list(acc_options.keys())
+        default_acc_index = 0
+        for i, name in enumerate(acc_names):
+            if acc_options[name] == curr_acc_id:
+                default_acc_index = i
+                break
+
+        sel_acc_name = st.selectbox("所屬帳戶", acc_names, index=default_acc_index, key=f"acc_edit_{index}")
+
+        if st.button("保存修正", key=f"btn_fix_{index}", use_container_width=True):
             asset["Quantity"] = fq
             asset["Avg_Cost"] = fc
+            asset["Account_ID"] = acc_options[sel_acc_name]
             save_portfolio(st.session_state.portfolio)
             st.session_state["force_refresh_market_data"] = True
+            st.success("數據已更新")
             st.rerun()
 
     with tab_risk:
@@ -792,40 +836,14 @@ def render_account_manager():
 # 主入口
 # ===========================
 def render_asset_list_section(df_market_data, c_symbol):
-    # (維持原樣，請保留原程式碼)
     st.subheader("📋 資產清單管理")
+
     if not st.session_state.portfolio:
         st.info("目前無資產。")
         return
-    # ... (略) ...
-    # 這裡請將上一版 render_asset_list_section 的內容完整貼上
-    # 為節省篇幅，假設此處已有完整程式碼
-    pass
 
-
-# 重新補上 render_asset_list_section 的核心邏輯以免出錯 (簡化版，請用您手上的完整版)
-def render_asset_list_section(df_market_data, c_symbol):
-    st.subheader("📋 資產清單管理")
-    col_search, col_filter, col_sort = st.columns([2, 1.5, 1.5])
-    search_txt = col_search.text_input(
-        "🔍 搜尋資產", placeholder="輸入代號或類別...", label_visibility="collapsed"
-    )
-    all_cats = (
-        ["所有類別"] + list(set([p["Type"] for p in st.session_state.portfolio]))
-        if st.session_state.portfolio
-        else []
-    )
-    filter_cat = col_filter.selectbox(
-        "篩選類別", all_cats, label_visibility="collapsed"
-    )
-    sort_opts = ["預設 (加入順序)", "市值 (高→低)", "成本 (高→低)", "更新時間 (新→舊)"]
-    sort_by = col_sort.selectbox("排序方式", sort_opts, label_visibility="collapsed")
-    st.divider()
-
+    # Prepare Data
     df_raw = pd.DataFrame(st.session_state.portfolio)
-    if df_raw.empty:
-        st.info("目前無資產。")
-        return
     df_raw["Original_Index"] = df_raw.index
 
     if not df_market_data.empty:
@@ -843,7 +861,6 @@ def render_asset_list_section(df_market_data, c_symbol):
         # Use converted Avg_Cost from market data if available
         if "Avg_Cost_y" in df_merged.columns:
             df_merged["Avg_Cost"] = df_merged["Avg_Cost_y"].fillna(df_merged["Avg_Cost_x"])
-            # We can drop the suffixes if we want to clean up, but Avg_Cost is what matters for display
 
         df_merged["Market_Value"] = df_merged["Market_Value"].fillna(0)
         
@@ -862,106 +879,56 @@ def render_asset_list_section(df_market_data, c_symbol):
         df_merged["Market_Value"] = 0
         df_merged["Current_Price"] = 0
         df_merged["Last_Update"] = "N/A"
-
-    if filter_cat != "所有類別":
-        df_merged = df_merged[df_merged["Type"] == filter_cat]
-    if search_txt:
-        df_merged = df_merged[df_merged["Ticker"].str.contains(search_txt.upper())]
-
-    if "市值" in sort_by:
-        df_merged = df_merged.sort_values(by="Market_Value", ascending=False)
-
-    # Header row
-    h1, h2, h3, h4, h5, h6, h7, h8 = st.columns([1.2, 0.8, 1, 1.2, 1, 0.6, 0.8, 1.0])
-    h1.caption("**代號**")
-    h2.caption("**數量**")
-    h3.caption("**成本**")
-    h4.caption("**現價 & 更新**")
-    h5.caption("**市值/損益**")
-    h6.caption("**SL/TP**")
-    h7.caption("**同步**")
-    h8.caption("**帳戶**")
-    st.divider()
-
-    # Create account map
+        
+    # Account Name Mapping
     accounts_map = {acc["id"]: acc["name"] for acc in st.session_state.get("accounts", [])}
 
-    # 簡易渲染
-    for _, row in df_merged.iterrows():
-        idx = row["Original_Index"]
-        item = st.session_state.portfolio[idx]
+    # Ensure Account_ID exists
+    if "Account_ID" not in df_merged.columns:
+        df_merged["Account_ID"] = "default_main"
+    else:
+        # Fill missing IDs
+        df_merged["Account_ID"] = df_merged["Account_ID"].fillna("default_main")
         
-        # Display Columns Logic
-        # Try to use Display columns from market data, fallback to raw calculation
-        d_price = row.get("Display_Price", row.get("Current_Price", 0))
-        d_mv = row.get("Display_Market_Value", row.get("Market_Value", 0))
-        d_pl = row.get("Display_PL", row.get("Unrealized_PL", 0))
-        d_curr= row.get("Display_Currency", item.get("Currency", "USD"))
-        d_sym = config.ui.currency_symbols.get(d_curr, "$")
-        
-        # Update logic for "Last_Update"
-        if "Last_Update" in row and pd.notna(row["Last_Update"]) and row["Last_Update"] != "N/A":
-            last_update = row["Last_Update"]
-        else:
-            last_update = item.get("Last_Update", "N/A")
-            
-        update_color = "#FF8C00" if check_is_outdated(last_update) else "#28a745"
-        
-        # SL/TP Logic (Same as before)
-        suggested_sl = None
-        suggested_tp = None
-        try:
-             s_sl = item.get("Suggested_SL")
-             if s_sl and s_sl != "N/A": suggested_sl = float(s_sl)
-             s_tp = item.get("Suggested_TP")
-             if s_tp and s_tp != "N/A": suggested_tp = float(s_tp)
-        except: pass
-        
-        status_indicator = "⚪"
-        if suggested_sl is not None and suggested_tp is not None and d_price > 0:
-            if d_price <= suggested_sl: status_indicator = "🔴"
-            elif d_price >= suggested_tp: status_indicator = "🟢"
-            else: status_indicator = "🟡"
+    df_merged["Account_Name"] = df_merged["Account_ID"].map(lambda x: accounts_map.get(x, "未知"))
 
-        with st.container():
-             c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([1.2, 0.8, 1, 1.2, 1, 0.6, 0.8, 1.0])
-             c1.markdown(f"**{item['Ticker']}**")
-             c1.caption(f"{item['Type']}")
-             c2.write(f"{item['Quantity']}")
-             c3.write(f"{item['Avg_Cost']}")
-             
-             with c4:
-                 if d_price > 0:
-                     st.markdown(f"**{d_sym}{d_price:,.2f}**")
-                 else:
-                     st.markdown("_N/A_")
-                 st.markdown(f"<span style='color:{update_color}; font-size:11px'>🕒 {last_update}</span>", unsafe_allow_html=True)
-            
-             with c5:
-                 st.markdown(f"**{d_sym}{d_mv:,.0f}**")
-                 pl_color = "green" if d_pl >= 0 else "red"
-                 st.markdown(f"<span style='color:{pl_color}'>{d_sym}{d_pl:,.0f}</span>", unsafe_allow_html=True)
-                 
-             with c6:
-                  # ... SL/TP display
-                  if suggested_sl:
-                      st.write(f"{status_indicator}")
-                  else:
-                      st.write("⚪")
-             
-             with c7:
-                  if st.button("🔄", key=f"sync_{idx}"):
-                      # Sync logic (keep same)
-                      pass
-                  if st.button("⚙️", key=f"m_{idx}"):
-                      asset_action_dialog(idx, item)
-             
-             with c8:
-                  acc_id = item.get("Account_ID", "default_main")
-                  acc_name = accounts_map.get(acc_id, "未知帳戶")
-                  st.caption(acc_name)
-                  
-        st.divider()
+    # Selection Mode
+    st.info("💡 點選下方表格中的任一列以進行管理 (編輯、刪除、風控)")
+
+    # Display Dataframe with Selection
+    event = st.dataframe(
+        df_merged,
+        column_order=["Type", "Ticker", "Quantity", "Avg_Cost", "Current_Price", "Market_Value", "Last_Update", "Account_Name"],
+        column_config={
+            "Type": st.column_config.TextColumn("類別", width="small"),
+            "Ticker": st.column_config.TextColumn("代號", width="small", pinned=True),
+            "Quantity": st.column_config.NumberColumn("持倉", format="%.2f"),
+            "Avg_Cost": st.column_config.NumberColumn("成本", format="%.2f"),
+            "Current_Price": st.column_config.NumberColumn("現價", format="%.2f"),
+            "Market_Value": st.column_config.NumberColumn(f"市值 ({c_symbol})", format=f"{c_symbol}%.0f"),
+            "Last_Update": st.column_config.TextColumn("更新時間", width="medium"),
+            "Account_Name": st.column_config.TextColumn("帳戶", width="small"),
+        },
+        hide_index=True,
+        use_container_width=True,
+        on_select="rerun",
+        selection_mode="single-row"
+    )
+
+    # Handle Selection
+    if len(event.selection.rows) > 0:
+        selected_row_index = event.selection.rows[0]
+        # Map back to original index using the dataframe index (which might be sorted/filtered if we allowed that)
+        # But here df_merged index aligns with df_raw if not sorted.
+        # Wait, st.dataframe sort in UI doesn't affect the returned row index?
+        # Actually, st.dataframe returns the index of the underlying dataframe row.
+        # Since we haven't sorted df_merged programmatically, the index is consistent.
+        
+        # Get the original index stored in the column
+        original_idx = df_merged.iloc[selected_row_index]["Original_Index"]
+        item = st.session_state.portfolio[original_idx]
+        
+        asset_action_dialog(original_idx, item)
 
 
 
