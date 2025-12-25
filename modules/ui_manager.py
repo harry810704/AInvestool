@@ -879,7 +879,7 @@ def render_asset_list_section(df_market_data, c_symbol):
         df_merged["Market_Value"] = 0
         df_merged["Current_Price"] = 0
         df_merged["Last_Update"] = "N/A"
-        
+
     # Account Name Mapping
     accounts_map = {acc["id"]: acc["name"] for acc in st.session_state.get("accounts", [])}
     df_merged["Account_Name"] = df_merged["Account_ID"].map(lambda x: accounts_map.get(x, "未知"))
@@ -907,12 +907,16 @@ def render_asset_list_section(df_market_data, c_symbol):
         selection_mode="single-row"
     )
 
+    # Ensure columns are clean strings and remove duplicates
+    df_merged.columns = df_merged.columns.astype(str).str.strip()
+    df_merged = df_merged.loc[:, ~df_merged.columns.duplicated()]
+
     # Ensure Account_ID exists
     if "Account_ID" not in df_merged.columns:
         df_merged["Account_ID"] = "default_main"
-    else:
-        # Fill missing IDs
-        df_merged["Account_ID"] = df_merged["Account_ID"].fillna("default_main")
+
+    # Fill missing IDs
+    df_merged["Account_ID"] = df_merged["Account_ID"].fillna("default_main")
         
     df_merged["Account_Name"] = df_merged["Account_ID"].map(lambda x: accounts_map.get(x, "未知"))
 
