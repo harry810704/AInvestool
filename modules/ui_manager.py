@@ -907,6 +907,38 @@ def render_asset_list_section(df_market_data, c_symbol):
         selection_mode="single-row"
     )
 
+    # Ensure Account_ID exists
+    if "Account_ID" not in df_merged.columns:
+        df_merged["Account_ID"] = "default_main"
+    else:
+        # Fill missing IDs
+        df_merged["Account_ID"] = df_merged["Account_ID"].fillna("default_main")
+        
+    df_merged["Account_Name"] = df_merged["Account_ID"].map(lambda x: accounts_map.get(x, "未知"))
+
+    # Selection Mode
+    st.info("💡 點選下方表格中的任一列以進行管理 (編輯、刪除、風控)")
+
+    # Display Dataframe with Selection
+    event = st.dataframe(
+        df_merged,
+        column_order=["Type", "Ticker", "Quantity", "Avg_Cost", "Current_Price", "Market_Value", "Last_Update", "Account_Name"],
+        column_config={
+            "Type": st.column_config.TextColumn("類別", width="small"),
+            "Ticker": st.column_config.TextColumn("代號", width="small", pinned=True),
+            "Quantity": st.column_config.NumberColumn("持倉", format="%.2f"),
+            "Avg_Cost": st.column_config.NumberColumn("成本", format="%.2f"),
+            "Current_Price": st.column_config.NumberColumn("現價", format="%.2f"),
+            "Market_Value": st.column_config.NumberColumn(f"市值 ({c_symbol})", format=f"{c_symbol}%.0f"),
+            "Last_Update": st.column_config.TextColumn("更新時間", width="medium"),
+            "Account_Name": st.column_config.TextColumn("帳戶", width="small"),
+        },
+        hide_index=True,
+        use_container_width=True,
+        on_select="rerun",
+        selection_mode="single-row"
+    )
+
     # Handle Selection
     if len(event.selection.rows) > 0:
         selected_row_index = event.selection.rows[0]
