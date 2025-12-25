@@ -16,6 +16,8 @@ from modules.drive_manager import (
     save_csv_to_drive,
     read_json_from_drive,
     save_json_to_drive,
+    read_excel_from_drive,
+    save_excel_to_drive,
 )
 from modules.logger import get_logger
 from modules.exceptions import DriveServiceError, DataValidationError
@@ -45,6 +47,7 @@ def get_service() -> Optional[Resource]:
 def load_portfolio() -> List[dict]:
     """
     Load portfolio from Google Drive.
+    Supports legacy CSV if Excel not found.
     
     Returns:
         List[dict]: List of asset dictionaries
@@ -58,8 +61,22 @@ def load_portfolio() -> List[dict]:
         return []
 
     try:
-        data = read_csv_from_drive(service, config.google_drive.portfolio_filename)
+        # Try loading Excel first
+        data = read_excel_from_drive(service, config.google_drive.portfolio_filename)
         
+        # If no Excel, try legacy CSV
+        if not data:
+            logger.info("Excel portfolio not found, checking legacy CSV")
+            data = read_csv_from_drive(service, config.google_drive.legacy_portfolio_filename)
+
+            # If found legacy data, we should probably save it as Excel to migrate
+            if data:
+                logger.info("Found legacy CSV portfolio, migrating to Excel")
+                try:
+                    save_excel_to_drive(service, config.google_drive.portfolio_filename, data)
+                except Exception as ex:
+                    logger.warning(f"Migration to Excel failed: {ex}")
+
         if not data:
             logger.info("No portfolio data found in Drive")
             return []
@@ -142,8 +159,8 @@ def save_portfolio(portfolio: List[dict]) -> None:
         raise DriveServiceError("Drive service not available")
     
     try:
-        save_csv_to_drive(service, config.google_drive.portfolio_filename, validated_portfolio)
-        logger.info(f"Saved {len(validated_portfolio)} assets to portfolio")
+        save_excel_to_drive(service, config.google_drive.portfolio_filename, validated_portfolio)
+        logger.info(f"Saved {len(validated_portfolio)} assets to portfolio (Excel)")
         
     except Exception as e:
         logger.error(f"Failed to save portfolio: {e}")
@@ -166,8 +183,31 @@ def load_allocation_settings() -> Dict[str, float]:
         return config.allocation.targets.copy()
 
     try:
-        data = read_json_from_drive(service, config.google_drive.settings_filename)
+        # Try loading Excel
+        excel_data = read_excel_from_drive(service, config.google_drive.settings_filename)
+        data = {}
         
+        if excel_data:
+            # Convert Excel list of dicts back to simple dict
+            # Expecting columns "Type" and "Target" (or whatever was saved)
+            # If migrating from JSON {key: val}, we save as rows: Type, Target
+            for row in excel_data:
+                if "Type" in row and "Target" in row:
+                    data[row["Type"]] = float(row["Target"])
+        else:
+            logger.info("Excel settings not found, checking legacy JSON")
+            data = read_json_from_drive(service, config.google_drive.legacy_settings_filename)
+
+            if data:
+                # Migrate
+                logger.info("Migrating settings to Excel")
+                try:
+                    # Transform dict to list for Excel
+                    excel_list = [{"Type": k, "Target": v} for k, v in data.items()]
+                    save_excel_to_drive(service, config.google_drive.settings_filename, excel_list)
+                except Exception as ex:
+                    logger.warning(f"Migration to Excel failed: {ex}")
+
         if not data:
             logger.info("No allocation settings found, using defaults")
             return config.allocation.targets.copy()
@@ -211,8 +251,10 @@ def save_allocation_settings(settings: Dict[str, float]) -> None:
                 f"Allocation settings sum to {allocation.total_percentage()}%, not 100%"
             )
         
-        save_json_to_drive(service, config.google_drive.settings_filename, allocation.to_dict())
-        logger.info("Saved allocation settings")
+        # Convert dict to list for Excel
+        excel_data = [{"Type": k, "Target": v} for k, v in allocation.to_dict().items()]
+        save_excel_to_drive(service, config.google_drive.settings_filename, excel_data)
+        logger.info("Saved allocation settings (Excel)")
         
     except Exception as e:
         logger.error(f"Failed to save allocation settings: {e}")
@@ -235,13 +277,27 @@ def load_accounts() -> List[dict]:
         return [Account(id="default_main", name="主要帳戶", type="投資帳戶", currency="TWD").to_dict()]
 
     try:
-        data = read_json_from_drive(service, config.google_drive.accounts_filename)
+        # Try Excel
+        data = read_excel_from_drive(service, config.google_drive.accounts_filename)
         
+        if not data:
+            # Try Legacy JSON
+            logger.info("Excel accounts not found, checking legacy JSON")
+            data = read_json_from_drive(service, config.google_drive.legacy_accounts_filename)
+
+            if data:
+                # Migrate
+                logger.info("Migrating accounts to Excel")
+                try:
+                    save_excel_to_drive(service, config.google_drive.accounts_filename, data)
+                except Exception as ex:
+                    logger.warning(f"Migration to Excel failed: {ex}")
+
         if not data:
             logger.info("No accounts found, creating default")
             default_acc = Account(id="default_main", name="主要帳戶", type="投資帳戶", currency="TWD")
             accounts = [default_acc.to_dict()]
-            save_json_to_drive(service, config.google_drive.accounts_filename, accounts)
+            save_excel_to_drive(service, config.google_drive.accounts_filename, accounts)
             return accounts
         
         # Validate keys
@@ -285,8 +341,8 @@ def save_accounts(accounts: List[dict]) -> None:
             acc = Account.from_dict(item)
             validated.append(acc.to_dict())
             
-        save_json_to_drive(service, config.google_drive.accounts_filename, validated)
-        logger.info(f"Saved {len(validated)} accounts")
+        save_excel_to_drive(service, config.google_drive.accounts_filename, validated)
+        logger.info(f"Saved {len(validated)} accounts (Excel)")
         
     except Exception as e:
         logger.error(f"Failed to save accounts: {e}")

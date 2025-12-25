@@ -404,3 +404,85 @@ def save_json_to_drive(service: Resource, filename: str, data: dict) -> None:
     except Exception as e:
         logger.error(f"Failed to save JSON '{filename}': {e}")
         st.error(f"JSON 存檔失敗: {e}")
+
+
+def read_excel_from_drive(service: Resource, filename: str) -> List[dict]:
+    """
+    Read Excel file from Google Drive.
+
+    Args:
+        service: Google Drive service instance
+        filename: Name of Excel file to read
+
+    Returns:
+        List[dict]: List of records from Excel
+    """
+    try:
+        folder_id = ensure_folder_exists(service)
+        file_id = get_file_id(service, folder_id, filename)
+        if not file_id:
+            logger.info(f"Excel file '{filename}' not found, returning empty list")
+            return []
+
+        request = service.files().get_media(fileId=file_id)
+        file_content = request.execute()
+
+        # Read Excel using pandas
+        # Note: openpyxl must be installed
+        df = pd.read_excel(io.BytesIO(file_content))
+
+        logger.info(f"Read {len(df)} records from '{filename}'")
+        return df.to_dict("records")
+    except Exception as e:
+        logger.error(f"Failed to read Excel '{filename}': {e}")
+        st.error(f"讀取 Excel 失敗: {e}")
+        return []
+
+
+def save_excel_to_drive(service: Resource, filename: str, data: Any) -> None:
+    """
+    Save data to Excel file in Google Drive.
+
+    Args:
+        service: Google Drive service instance
+        filename: Name of Excel file to save
+        data: Data to save (List of dicts or DataFrame)
+    """
+    try:
+        folder_id = ensure_folder_exists(service)
+        file_id = get_file_id(service, folder_id, filename)
+
+        # Convert to DataFrame if list of dicts
+        if isinstance(data, list):
+            df = pd.DataFrame(data)
+        elif isinstance(data, pd.DataFrame):
+            df = data
+        else:
+            logger.error("Invalid data type for Excel save")
+            return
+
+        excel_buffer = io.BytesIO()
+        df.to_excel(excel_buffer, index=False, engine='openpyxl')
+
+        # Reset buffer position
+        excel_buffer.seek(0)
+
+        # Use appropriate MIME type for XLSX
+        media = MediaIoBaseUpload(
+            excel_buffer,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            resumable=True
+        )
+
+        if file_id:
+            service.files().update(fileId=file_id, media_body=media).execute()
+            logger.info(f"Updated Excel '{filename}' with {len(df)} records")
+        else:
+            file_metadata = {"name": filename, "parents": [folder_id]}
+            service.files().create(
+                body=file_metadata, media_body=media, fields="id"
+            ).execute()
+            logger.info(f"Created Excel '{filename}' with {len(df)} records")
+    except Exception as e:
+        logger.error(f"Failed to save Excel '{filename}': {e}")
+        st.error(f"Excel 存檔失敗: {e}")
