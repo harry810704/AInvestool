@@ -50,11 +50,45 @@ def render_dashboard(df_all: pd.DataFrame, c_symbol: str, total_val: float) -> N
     g_pl = df_all['Unrealized_PL'].sum() # PL of Assets + PL of Liabilities
     g_roi = (g_pl / g_cost) * 100 if g_cost > 0 else 0
     
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric("淨資產", f"{c_symbol}{total_val:,.0f}", help=f"資產: {c_symbol}{assets_val:,.0f} | 負債: {c_symbol}{liabilities_val:,.0f}")
-    kpi2.metric("總投入成本", f"{c_symbol}{g_cost:,.0f}", help="(僅計算資產端)")
-    kpi3.metric("總損益", f"{c_symbol}{g_pl:,.0f}", delta_color="normal")
-    kpi4.metric("總報酬率 (ROI)", f"{g_roi:.2f}%", delta=f"{g_roi:.2f}%")
+    # Custom Card KPI Layout
+    cols = st.columns(4)
+
+    metrics = [
+        {
+            "label": "淨資產 (Net Worth)",
+            "value": f"{c_symbol}{total_val:,.0f}",
+            "sub": f"資產: {c_symbol}{assets_val:,.0f} | 負債: {c_symbol}{liabilities_val:,.0f}",
+            "color": "#5D69B1"
+        },
+        {
+            "label": "總投入成本 (Cost)",
+            "value": f"{c_symbol}{g_cost:,.0f}",
+            "sub": "僅計算資產端投入",
+            "color": "#E58606"
+        },
+        {
+            "label": "總損益 (P/L)",
+            "value": f"{c_symbol}{g_pl:,.0f}",
+            "sub": "含未實現損益",
+            "color": "green" if g_pl >= 0 else "red"
+        },
+        {
+            "label": "總報酬率 (ROI)",
+            "value": f"{g_roi:+.2f}%",
+            "sub": "基於總成本計算",
+            "color": "green" if g_roi >= 0 else "red"
+        }
+    ]
+
+    for i, m in enumerate(metrics):
+        with cols[i]:
+            st.markdown(f"""
+            <div class="css-card">
+                <div style="color: #666; font-size: 0.9em; margin-bottom: 5px;">{m['label']}</div>
+                <div style="font-size: 1.8em; font-weight: bold; color: {m['color']};">{m['value']}</div>
+                <div style="color: #999; font-size: 0.8em; margin-top: 5px;">{m['sub']}</div>
+            </div>
+            """, unsafe_allow_html=True)
     
     st.divider()
 
@@ -103,7 +137,14 @@ def render_rebalancing(df_all: pd.DataFrame, total_val: float, c_symbol: str) ->
             name='目標佔比', 
             marker_color=colors['secondary_bar']
         ))
-        fig.update_layout(barmode='group', height=250, margin=dict(l=20, r=20, t=20, b=20))
+        fig.update_layout(
+            barmode='group',
+            height=250,
+            margin=dict(l=20, r=20, t=20, b=20),
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
         st.plotly_chart(fig, use_container_width=True)
     
     with col2:
@@ -213,13 +254,23 @@ def render_category_overview(df_all: pd.DataFrame, total_val: float, c_symbol: s
         fig_pie.update_layout(
             margin=dict(t=0, b=0, l=0, r=0),
             height=250,
-            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
+            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
         )
         st.plotly_chart(fig_pie, use_container_width=True)
         
         st.markdown("**📈 類別績效比較**")
         fig_bar = px.bar(df_grouped, x='ROI', y='Type', orientation='h', color='ROI', color_continuous_scale='RdYlGn')
-        fig_bar.update_layout(xaxis_title=None, yaxis_title=None, height=200, margin=dict(t=0,b=0,l=0,r=0), coloraxis_showscale=False)
+        fig_bar.update_layout(
+            xaxis_title=None,
+            yaxis_title=None,
+            height=200,
+            margin=dict(t=0,b=0,l=0,r=0),
+            coloraxis_showscale=False,
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+        )
         st.plotly_chart(fig_bar, use_container_width=True)
 
 
@@ -248,49 +299,63 @@ def render_single_category_detail(df_all: pd.DataFrame, total_val: float, c_symb
     # 左右佈局
     col_list, col_charts = st.columns([0.65, 0.35], gap="large")
 
-    # 左側：個股清單
+    # 左側：個股清單 (改用 DataFrame)
     with col_list:
-        h1, h2, h3 = st.columns([1.5, 1.2, 1.2])
-        h1.caption("資產名稱")
-        h2.caption("市值 & 類別權重")
-        h3.caption("損益 & 績效")
-        st.markdown("---")
+        # Prepare data for st.dataframe
 
-        for idx, row in cat_df.iterrows():
-            weight_in_cat = (row['Market_Value'] / cat_val) * 100 if cat_val > 0 else 0
-            
-            with st.container():
-                c1, c2, c3 = st.columns([1.5, 1.2, 1.2])
-                
-                with c1:
-                    st.markdown(f"**{row['Ticker']}**")
-                    status_color = "green" if "即時" in row['Status'] else "#FF4B4B"
-                    st.caption(f"持倉: {row['Quantity']:,.2f} | 均價: {row['Avg_Cost']:,.0f}")
-                    st.markdown(f"<span style='background-color:{status_color}; color:white; padding:1px 4px; border-radius:3px; font-size:10px'>{row['Status']}</span>", unsafe_allow_html=True)
-                    # Display last update time
-                    last_update = row.get('Last_Update', 'N/A')
-                    st.caption(f"🕒 更新: {last_update}")
-                
-                with c2:
-                    # Use Display Columns if available
-                    d_mv = row.get("Display_Market_Value", row['Market_Value'])
-                    d_curr = row.get("Display_Currency", row.get("Currency", "USD"))
-                    d_sym = config.ui.currency_symbols.get(d_curr, "$")
-                    d_price = row.get("Display_Price", row['Current_Price'])
-                    
-                    st.markdown(f"**{d_sym}{d_mv:,.0f}**")
-                    st.caption(f"現價: {d_price:,.2f}")
-                    st.progress(min(weight_in_cat / 100, 1.0))
-                    st.caption(f"類別佔比: {weight_in_cat:.0f}%") # 這是個股在該類別的佔比
+        # Calculate Category Weight in advance
+        cat_df['Cat_Weight'] = cat_df['Market_Value'] / cat_val if cat_val > 0 else 0
 
-                with c3:
-                    d_pl = row.get("Display_PL", row['Unrealized_PL'])
-                    pl_c = "green" if d_pl > 0 else "red"
-                    st.markdown(f"<span style='color:{pl_c}; font-weight:bold'>{d_sym}{d_pl:,.0f}</span>", unsafe_allow_html=True)
-                    roi_bg = "#e6fffa" if row['ROI (%)'] > 0 else "#fff5f5"
-                    roi_color = "#009688" if row['ROI (%)'] > 0 else "#e53e3e"
-                    st.markdown(f"<div style='background-color:{roi_bg}; color:{roi_color}; padding:4px; border-radius:4px; text-align:center; width:80%; font-size:12px; font-weight:bold'>{row['ROI (%)']:.1f}%</div>", unsafe_allow_html=True)
-            st.divider()
+        # Format columns for display
+        display_df = cat_df.copy()
+
+        # Select and Rename columns
+        display_df = display_df[[
+            'Ticker', 'Quantity', 'Avg_Cost', 'Current_Price',
+            'Market_Value', 'Unrealized_PL', 'ROI (%)', 'Cat_Weight', 'Status', 'Last_Update'
+        ]]
+
+        # We need to ensure types are numeric for column_config to work
+        # Ticker: Text
+        # Quantity, Avg_Cost, Current_Price: Number
+        # Market_Value, Unrealized_PL: Currency
+        # ROI, Cat_Weight: Number (Percentage)
+
+        st.dataframe(
+            display_df,
+            key="dashboard_holdings_table",
+            column_config={
+                "Ticker": st.column_config.TextColumn("代號", width="small", pinned=True),
+                "Quantity": st.column_config.NumberColumn("持倉", format="%.2f"),
+                "Avg_Cost": st.column_config.NumberColumn("成本", format="%.2f"),
+                "Current_Price": st.column_config.NumberColumn("現價", format="%.2f"),
+                "Market_Value": st.column_config.NumberColumn(
+                    f"市值 ({c_symbol})",
+                    format=f"{c_symbol}%.0f"
+                ),
+                "Unrealized_PL": st.column_config.NumberColumn(
+                    f"損益 ({c_symbol})",
+                    format=f"{c_symbol}%.0f"
+                ),
+                "ROI (%)": st.column_config.ProgressColumn(
+                    "ROI",
+                    format="%.1f%%",
+                    min_value=-50,
+                    max_value=50,
+                ),
+                "Cat_Weight": st.column_config.ProgressColumn(
+                    "類別佔比",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=1,
+                ),
+                "Status": st.column_config.TextColumn("狀態", width="small"),
+                "Last_Update": st.column_config.TextColumn("更新時間", width="medium"),
+            },
+            hide_index=True,
+            use_container_width=True,
+            height=500
+        )
 
     # 右側：個股分析圖表
     with col_charts:
