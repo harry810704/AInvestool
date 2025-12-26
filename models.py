@@ -41,7 +41,7 @@ class Account(BaseModel):
     
     def to_dict(self) -> dict:
         return {
-            "id": self.id,
+            "account_id": self.id,
             "name": self.name,
             "type": self.type,
             "currency": self.currency
@@ -50,10 +50,10 @@ class Account(BaseModel):
     @classmethod
     def from_dict(cls, data: dict) -> "Account":
         return cls(
-            id=data.get("id", ""),
-            name=data.get("name", ""),
-            type=data.get("type", "投資帳戶"),
-            currency=data.get("currency", "TWD")
+            id=str(data.get("account_id") or data.get("id", "")),
+            name=str(data.get("name", "")),
+            type=str(data.get("type", "投資帳戶")),
+            currency=str(data.get("currency", "TWD"))
         )
 
 
@@ -77,16 +77,19 @@ class Asset(BaseModel):
         validate_assignment=True,
     )
     
-    type: str = Field(..., description="Asset category")
-    ticker: str = Field(..., description="Stock ticker symbol or ID", min_length=1)
+    asset_id: str = Field(default="", description="Unique Asset ID")
+    account_id: str = Field(..., description="Linked Account ID")
+    type: str = Field(..., description="Asset category (asset_class)")
+    ticker: str = Field(..., description="Stock ticker symbol (symbol)", min_length=1)
+    name: str = Field(default="", description="Asset Name")
     quantity: float = Field(..., ge=0, description="Number of shares/units")
-    avg_cost: float = Field(..., ge=0, description="Average cost per share")
+    avg_cost: float = Field(default=0.0, ge=0, description="Average cost per share")
     currency: Literal["USD", "TWD"] = Field(default="USD", description="Asset currency")
+    note: str = Field(default="", description="Optional notes")
     manual_price: float = Field(default=0.0, ge=0, description="Manual price override")
     last_update: str = Field(default="N/A", description="Last update timestamp")
     suggested_sl: Optional[float] = Field(default=None, description="Suggested stop loss price")
     suggested_tp: Optional[float] = Field(default=None, description="Suggested take profit price")
-    account_id: Optional[str] = Field(default=None, description="Linked Account ID")
     
     @field_validator('ticker')
     @classmethod
@@ -112,20 +115,22 @@ class Asset(BaseModel):
         Returns:
             dict: Dictionary with capitalized keys matching CSV format
         """
-        d = {
-            "Type": self.type,
-            "Ticker": self.ticker,
-            "Quantity": self.quantity,
-            "Avg_Cost": self.avg_cost,
-            "Currency": self.currency,
-            "Manual_Price": self.manual_price,
-            "Last_Update": self.last_update,
-            "Suggested_SL": self.suggested_sl if self.suggested_sl is not None else "",
-            "Suggested_TP": self.suggested_tp if self.suggested_tp is not None else "",
+        return {
+            "asset_id": self.asset_id,
+            "account_id": self.account_id,
+            "asset_class": self.type,
+            "symbol": self.ticker,
+            "name": self.name,
+            "quantity": self.quantity,
+            "note": self.note,
+            # Extra fields needed for app logic but technically extensions to the user's minimal example
+            "avg_cost": self.avg_cost,
+            "currency": self.currency,
+            "manual_price": self.manual_price,
+            "last_update": self.last_update,
+            "suggested_sl": self.suggested_sl,
+            "suggested_tp": self.suggested_tp
         }
-        if self.account_id:
-            d["Account_ID"] = self.account_id
-        return d
     
     @classmethod
     def from_dict(cls, data: dict) -> "Asset":
@@ -150,16 +155,19 @@ class Asset(BaseModel):
                 return None
         
         return cls(
-            type=data.get("Type") or data.get("type"),
-            ticker=data.get("Ticker") or data.get("ticker"),
-            quantity=float(data.get("Quantity") or data.get("quantity", 0)),
-            avg_cost=float(data.get("Avg_Cost") or data.get("avg_cost", 0)),
-            currency=data.get("Currency") or data.get("currency", "USD"),
-            manual_price=float(data.get("Manual_Price") or data.get("manual_price", 0)),
-            last_update=data.get("Last_Update") or data.get("last_update", "N/A"),
-            suggested_sl=parse_optional_float("Suggested_SL", "suggested_sl"),
-            suggested_tp=parse_optional_float("Suggested_TP", "suggested_tp"),
-            account_id=data.get("Account_ID") or data.get("account_id"),
+            asset_id=str(data.get("asset_id") or ""),
+            account_id=str(data.get("account_id") or data.get("Account_ID", "default_main")),
+            type=str(data.get("asset_class") or data.get("Type")),
+            ticker=str(data.get("symbol") or data.get("Ticker")),
+            name=str(data.get("name", "")),
+            quantity=float(data.get("quantity") or data.get("Quantity", 0)),
+            note=str(data.get("note", "")),
+            avg_cost=float(data.get("avg_cost") or data.get("Avg_Cost", 0)),
+            currency=data.get("currency") or data.get("Currency", "USD"),
+            manual_price=float(data.get("manual_price") or data.get("Manual_Price", 0)),
+            last_update=data.get("last_update") or data.get("Last_Update", "N/A"),
+            suggested_sl=parse_optional_float("suggested_sl", "Suggested_SL"),
+            suggested_tp=parse_optional_float("suggested_tp", "Suggested_TP"),
         )
 
 
@@ -312,3 +320,63 @@ class DeploymentAction(BaseModel):
             if abs(v - expected) > 0.01:
                 raise ValueError(f"Total {v} does not match price * qty = {expected}")
         return v
+
+
+class HistoryRecord(BaseModel):
+    """
+    Represents a historical snapshot of the portfolio.
+    
+    Attributes:
+        date: Snapshot date (YYYY-MM-DD)
+        total_net_worth_twd: Total net worth in TWD
+        total_net_worth_usd: Total net worth in USD
+        us_stock_val: Value of US stocks
+        tw_stock_val: Value of TW stocks
+        cash_val: Value of Cash
+        crypto_val: Value of Crypto
+        loan_val: Value of Loans/Liabilities
+    """
+    
+    model_config = ConfigDict(validate_assignment=True)
+    
+    date: str
+    total_net_worth_twd: float
+    total_net_worth_usd: float
+    us_stock_val: float = 0.0
+    tw_stock_val: float = 0.0
+    cash_val: float = 0.0
+    crypto_val: float = 0.0
+    loan_val: float = 0.0
+    # Extendable for other classes if needed, maybe use extra="allow" logic or map explicitly
+    
+    def to_dict(self) -> dict:
+        return {
+            "date": self.date,
+            "total_net_worth_twd": self.total_net_worth_twd,
+            "total_net_worth_usd": self.total_net_worth_usd,
+            "us_stock_val": self.us_stock_val,
+            "tw_stock_val": self.tw_stock_val,
+            "cash_val": self.cash_val,
+            "crypto_val": self.crypto_val,
+            "loan_val": self.loan_val,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> "HistoryRecord":
+        # Handle excel timestamp if it comes as datetime object
+        d = data.get("date")
+        if hasattr(d, "strftime"):
+            d = d.strftime("%Y-%m-%d")
+        elif not d or pd.isna(d):
+            d = datetime.now().strftime("%Y-%m-%d")
+            
+        return cls(
+            date=str(d),
+            total_net_worth_twd=float(data.get("total_net_worth_twd", 0)),
+            total_net_worth_usd=float(data.get("total_net_worth_usd", 0)),
+            us_stock_val=float(data.get("us_stock_val", 0)),
+            tw_stock_val=float(data.get("tw_stock_val", 0)),
+            cash_val=float(data.get("cash_val", 0)),
+            crypto_val=float(data.get("crypto_val", 0)),
+            loan_val=float(data.get("loan_val", 0)),
+        )

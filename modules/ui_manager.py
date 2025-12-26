@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from modules.data_loader import save_portfolio, save_allocation_settings, save_accounts
+from modules.data_loader import save_all_data
 from modules.market_service import search_yahoo_ticker, fetch_single_price
 from models import Account
 from config import get_config
@@ -87,9 +87,19 @@ def calculate_base_suggestions(df_market_data, total_val, new_fund):
 
 
 @st.dialog("⚙️ 資產管理與交易")
+@st.dialog("⚙️ 資產管理與交易")
 def asset_action_dialog(index, asset):
-    st.header(f"管理：{asset['Ticker']}")
-    st.caption(f"類別: {asset['Type']} | 幣別: {asset['Currency']}")
+    # Map legacy keys if present (for safe migration)
+    ticker = asset.get("symbol") or asset.get("Ticker")
+    atype = asset.get("asset_class") or asset.get("Type")
+    curr = asset.get("currency") or asset.get("Currency")
+    avg_cost = asset.get("avg_cost")
+    if avg_cost is None: avg_cost = asset.get("Avg_Cost", 0.0)
+    qty = asset.get("quantity")
+    if qty is None: qty = asset.get("Quantity", 0.0)
+    
+    st.header(f"管理：{ticker}")
+    st.caption(f"類別: {atype} | 幣別: {curr}")
 
     # We use tabs for different actions
     tab_buy, tab_sell, tab_edit, tab_risk, tab_del = st.tabs(
@@ -101,23 +111,29 @@ def asset_action_dialog(index, asset):
         c1, c2 = st.columns(2)
         add_qty = c1.number_input("加倉數量", min_value=0.0, value=0.0, step=0.1, key=f"bq_{index}")
         add_price = c2.number_input(
-            f"成交單價 ({asset['Currency']})",
+            f"成交單價 ({curr})",
             min_value=0.0,
-            value=float(asset["Avg_Cost"]),
+            value=float(avg_cost),
             key=f"bp_{index}",
         )
 
-        st.info(f"預估投入金額: {asset['Currency']} {add_qty * add_price:,.2f}")
+        st.info(f"預估投入金額: {curr} {add_qty * add_price:,.2f}")
 
         if st.button("確認加倉", key=f"btn_buy_{index}", type="primary", use_container_width=True):
             if add_qty > 0:
-                old_cost = asset["Quantity"] * asset["Avg_Cost"]
-                new_qty = asset["Quantity"] + add_qty
-                asset["Avg_Cost"] = (
+                old_cost = qty * avg_cost
+                new_qty = qty + add_qty
+                new_avg = (
                     (old_cost + (add_qty * add_price)) / new_qty if new_qty else 0
                 )
-                asset["Quantity"] = new_qty
-                save_portfolio(st.session_state.portfolio)
+                asset["avg_cost"] = new_avg
+                asset["quantity"] = new_qty
+                
+                # Update legacy keys if they exist
+                if "Avg_Cost" in asset: asset["Avg_Cost"] = new_avg
+                if "Quantity" in asset: asset["Quantity"] = new_qty
+                
+                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
                 st.session_state["force_refresh_market_data"] = True
                 st.success("加倉成功！")
                 st.rerun()
@@ -129,7 +145,7 @@ def asset_action_dialog(index, asset):
         sell_qty = st.number_input(
             "賣出數量",
             min_value=0.0,
-            max_value=float(asset["Quantity"]),
+            max_value=float(qty),
             value=0.0,
             step=0.1,
             key=f"sq_{index}"
@@ -139,9 +155,12 @@ def asset_action_dialog(index, asset):
 
         if st.button("確認減倉", key=f"btn_sell_{index}", type="primary", use_container_width=True):
             if sell_qty > 0:
-                asset["Quantity"] -= sell_qty
-                if asset["Quantity"] < 0: asset["Quantity"] = 0 # Safety
-                save_portfolio(st.session_state.portfolio)
+                asset["quantity"] = qty - sell_qty
+                if asset["quantity"] < 0: asset["quantity"] = 0 # Safety
+                
+                if "Quantity" in asset: asset["Quantity"] = asset["quantity"]
+                
+                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
                 st.session_state["force_refresh_market_data"] = True
                 st.success("減倉成功！")
                 st.rerun()
@@ -152,17 +171,17 @@ def asset_action_dialog(index, asset):
         st.markdown("#### 修正數據 (不影響損益計算邏輯，僅修改記錄)")
         c1, c2 = st.columns(2)
         fq = c1.number_input(
-            "持有數量", min_value=0.0, value=float(asset["Quantity"]), key=f"fq_{index}"
+            "持有數量", min_value=0.0, value=float(qty), key=f"fq_{index}"
         )
         fc = c2.number_input(
-            "平均成本", min_value=0.0, value=float(asset["Avg_Cost"]), key=f"fc_{index}"
+            "平均成本", min_value=0.0, value=float(avg_cost), key=f"fc_{index}"
         )
 
         # Account modification
         accounts = st.session_state.get("accounts", [])
-        acc_options = {acc["name"]: acc["id"] for acc in accounts} if accounts else {"主要帳戶": "default_main"}
+        acc_options = {acc["name"]: str(acc.get("account_id") or acc.get("id")) for acc in accounts} if accounts else {"主要帳戶": "default_main"}
         # Reverse map for default index
-        curr_acc_id = asset.get("Account_ID", "default_main")
+        curr_acc_id = asset.get("account_id") or asset.get("Account_ID", "default_main")
 
         # Find index of current account in options keys
         # This is a bit tricky, simpler to just list names and find match
@@ -176,10 +195,15 @@ def asset_action_dialog(index, asset):
         sel_acc_name = st.selectbox("所屬帳戶", acc_names, index=default_acc_index, key=f"acc_edit_{index}")
 
         if st.button("保存修正", key=f"btn_fix_{index}", use_container_width=True):
-            asset["Quantity"] = fq
-            asset["Avg_Cost"] = fc
-            asset["Account_ID"] = acc_options[sel_acc_name]
-            save_portfolio(st.session_state.portfolio)
+            asset["quantity"] = fq
+            asset["avg_cost"] = fc
+            asset["account_id"] = acc_options[sel_acc_name]
+            
+            if "Quantity" in asset: asset["Quantity"] = fq
+            if "Avg_Cost" in asset: asset["Avg_Cost"] = fc
+            if "Account_ID" in asset: asset["Account_ID"] = asset["account_id"]
+            
+            save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
             st.session_state["force_refresh_market_data"] = True
             st.success("數據已更新")
             st.rerun()
@@ -190,16 +214,18 @@ def asset_action_dialog(index, asset):
         
         # Display current position info
         col_info1, col_info2 = st.columns(2)
-        col_info1.metric("代號", asset["Ticker"])
-        col_info2.metric("平均成本", f"{asset['Currency']} {asset['Avg_Cost']:.2f}")
+        col_info1.metric("代號", ticker)
+        col_info2.metric("平均成本", f"{asset.get('currency', 'USD')} {avg_cost:.2f}")
         
         # Get current price from market data if available
-        current_price = asset.get("Manual_Price", asset["Avg_Cost"])
-        if current_price == 0:
-            current_price = asset["Avg_Cost"]
+        current_price = asset.get("manual_price")
+        if current_price is None: current_price = asset.get("Manual_Price", 0.0)
         
-        col_info1.metric("當前價格", f"{asset['Currency']} {current_price:.2f}")
-        col_info2.metric("持有數量", f"{asset['Quantity']:.2f}")
+        if current_price == 0:
+            current_price = avg_cost
+        
+        col_info1.metric("當前價格", f"{asset.get('currency', 'USD')} {current_price:.2f}")
+        col_info2.metric("持有數量", f"{qty:.2f}")
         
         st.divider()
         
@@ -230,8 +256,8 @@ def asset_action_dialog(index, asset):
             
             with st.spinner(f"正在計算 {asset['Ticker']} 的風控建議..."):
                 result = suggest_sl_tp_for_holding(
-                    ticker=asset["Ticker"],
-                    avg_cost=asset["Avg_Cost"],
+                    ticker=ticker,
+                    avg_cost=avg_cost,
                     current_price=current_price,
                     atr_multiplier=atr_multiplier,
                     r_ratio=r_ratio
@@ -293,16 +319,19 @@ def asset_action_dialog(index, asset):
             
             # Save button
             if st.button("💾 應用建議並儲存", key=f"save_risk_{index}", type="primary"):
-                asset["Suggested_SL"] = result['sl_price']
-                asset["Suggested_TP"] = result['tp_price']
-                save_portfolio(st.session_state.portfolio)
-                st.success(f"✅ 已儲存 {asset['Ticker']} 的停損停利建議！")
+                asset["suggested_sl"] = result['sl_price']
+                asset["suggested_tp"] = result['tp_price']
+                if "Suggested_SL" in asset: asset["Suggested_SL"] = result['sl_price']
+                if "Suggested_TP" in asset: asset["Suggested_TP"] = result['tp_price']
+                
+                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
+                st.success(f"✅ 已儲存 {ticker} 的停損停利建議！")
                 st.rerun()
 
     with tab_del:
         if st.button("❌ 確認刪除", key=f"btn_del_{index}", type="primary"):
             st.session_state.portfolio.pop(index)
-            save_portfolio(st.session_state.portfolio)
+            save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
             st.session_state["force_refresh_market_data"] = True
             st.rerun()
 
@@ -331,7 +360,7 @@ def add_asset_dialog():
     
     # Pre-fetch accounts
     accounts = st.session_state.get("accounts", [])
-    acc_options = {acc["name"]: acc["id"] for acc in accounts} if accounts else {"主要帳戶": "default_main"}
+    acc_options = {acc["name"]: str(acc.get("account_id") or acc.get("id")) for acc in accounts} if accounts else {"主要帳戶": "default_main"}
     
     c1, c2 = st.columns(2)
     auto_t = sel.split(" | ")[0] if sel else ""
@@ -348,19 +377,23 @@ def add_asset_dialog():
 
     if st.button("確認新增", type="primary", use_container_width=True):
         if ticker:
+            # Generate new asset_id
+            new_id = f"ast_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            
             st.session_state.portfolio.append(
                 {
-                    "Type": atype,
-                    "Ticker": ticker,
-                    "Quantity": qty,
-                    "Avg_Cost": cost,
-                    "Currency": curr,
-                    "Manual_Price": 0.0,
-                    "Last_Update": "N/A",
-                    "Account_ID": sel_acc_id,
+                    "asset_id": new_id,
+                    "asset_class": atype,
+                    "symbol": ticker,
+                    "quantity": qty,
+                    "avg_cost": cost,
+                    "currency": curr,
+                    "manual_price": 0.0,
+                    "last_update": "N/A",
+                    "account_id": sel_acc_id,
                 }
             )
-            save_portfolio(st.session_state.portfolio)
+            save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
             st.session_state["force_refresh_market_data"] = True
             st.success(f"已新增 {ticker}")
             st.rerun()
@@ -371,7 +404,7 @@ def add_asset_dialog():
 # ===========================
 def render_allocation_section():
     st.subheader("🎯 投資配置目標設定")
-    current_types = set([p["Type"] for p in st.session_state.portfolio])
+    current_types = set([p.get("asset_class") or p.get("Type") for p in st.session_state.portfolio])
     all_types = list(current_types.union({"美股", "台股", "虛擬貨幣", "稀有金屬"}))
     new_targets = {}
     total_pct = 0.0
@@ -411,7 +444,7 @@ def render_allocation_section():
     else:
         if st.button("💾 儲存配置設定"):
             st.session_state.allocation_targets = new_targets
-            save_allocation_settings(new_targets)
+            save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
             st.success("設定已儲存")
 
 
@@ -649,7 +682,8 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
 
             # 選擇資產 (現有 or 新增)
             existing_assets = [
-                p["Ticker"] for p in st.session_state.portfolio if p["Type"] == sel_cat
+                p.get("symbol") or p.get("Ticker") for p in st.session_state.portfolio 
+                if (p.get("asset_class") or p.get("Type")) == sel_cat
             ]
             asset_opt = col_act1.selectbox(
                 "選擇資產", ["➕ 新增資產..."] + existing_assets, key="deploy_asset_sel"
@@ -673,7 +707,7 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
             ref_price = st.session_state.get("deploy_price_override", 100.0)
             if asset_opt != "➕ 新增資產...":
                 ref_item = next(
-                    (p for p in st.session_state.portfolio if p["Ticker"] == asset_opt),
+                    (p for p in st.session_state.portfolio if (p.get("symbol") or p.get("Ticker")) == asset_opt),
                     None,
                 )
                 if ref_item:
@@ -733,7 +767,7 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
                     (
                         i
                         for i, p in enumerate(st.session_state.portfolio)
-                        if p["Ticker"] == ticker
+                        if (p.get("symbol") or p.get("Ticker")) == ticker
                     ),
                     -1,
                 )
@@ -741,28 +775,37 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
                 if existing_idx >= 0:
                     # 更新現有
                     item = st.session_state.portfolio[existing_idx]
-                    old_cost = item["Quantity"] * item["Avg_Cost"]
-                    new_qty = item["Quantity"] + action["Qty"]
+                    current_qty = item.get("quantity") if item.get("quantity") is not None else item.get("Quantity", 0.0)
+                    current_avg = item.get("avg_cost") if item.get("avg_cost") is not None else item.get("Avg_Cost", 0.0)
+                    
+                    old_cost = current_qty * current_avg
+                    new_qty = current_qty + action["Qty"]
                     new_avg = (old_cost + action["Total"]) / new_qty if new_qty else 0
-                    st.session_state.portfolio[existing_idx]["Quantity"] = new_qty
-                    st.session_state.portfolio[existing_idx]["Avg_Cost"] = new_avg
+                    
+                    st.session_state.portfolio[existing_idx]["quantity"] = new_qty
+                    st.session_state.portfolio[existing_idx]["avg_cost"] = new_avg
+                    if "Quantity" in item: st.session_state.portfolio[existing_idx]["Quantity"] = new_qty
+                    if "Avg_Cost" in item: st.session_state.portfolio[existing_idx]["Avg_Cost"] = new_avg
                 else:
                     # 新增
                     # 需猜測幣別 (簡單邏輯)
                     curr = "TWD" if ".TW" in ticker else "USD"
+                    new_id = f"ast_{datetime.now().strftime('%Y%m%d%H%M%S')}_{ticker}"
                     st.session_state.portfolio.append(
                         {
-                            "Type": action["Type"],
-                            "Ticker": ticker,
-                            "Quantity": action["Qty"],
-                            "Avg_Cost": action["Price"],
-                            "Currency": curr,
-                            "Manual_Price": 0.0,
-                            "Last_Update": "N/A",
+                            "asset_id": new_id,
+                            "asset_class": action["Type"],
+                            "symbol": ticker,
+                            "quantity": action["Qty"],
+                            "avg_cost": action["Price"],
+                            "currency": curr,
+                            "manual_price": 0.0,
+                            "last_update": "N/A",
+                            "account_id": "default_main", # Default for deployment
                         }
                     )
 
-            save_portfolio(st.session_state.portfolio)
+            save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
             st.session_state["force_refresh_market_data"] = True
             st.session_state.draft_actions = []  # 清空
             st.success("交易已成功執行！請至資產清單查看。")
@@ -795,7 +838,7 @@ def render_account_manager():
             if st.button("更新", key=f"acc_upd_{i}"):
                 acc['name'] = new_name
                 acc['type'] = new_type
-                save_accounts(st.session_state.accounts)
+                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
                 st.success("已更新")
                 st.rerun()
                 

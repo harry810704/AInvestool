@@ -218,6 +218,34 @@ class SessionStateManager:
         """Set allocation targets loaded flag."""
         st.session_state[self.LOAD_ALLOCATION_TARGETS] = value
     
+    # Accounts
+    
+    @property
+    def accounts(self) -> List[dict]:
+        """Get accounts from session state."""
+        if "accounts" not in st.session_state:
+            st.session_state["accounts"] = []
+        return st.session_state["accounts"]
+    
+    @accounts.setter
+    def accounts(self, value: List[dict]):
+        """Set accounts in session state."""
+        st.session_state["accounts"] = value
+
+    # History Data
+    
+    @property
+    def history_data(self) -> List[dict]:
+        """Get history data from session state."""
+        if "history_data" not in st.session_state:
+            st.session_state["history_data"] = []
+        return st.session_state["history_data"]
+    
+    @history_data.setter
+    def history_data(self, value: List[dict]):
+        """Set history data in session state."""
+        st.session_state["history_data"] = value
+
     # Draft Actions (for deployment planning)
     
     @property

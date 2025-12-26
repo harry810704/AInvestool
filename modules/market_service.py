@@ -184,13 +184,15 @@ def auto_update_portfolio(portfolio: List[dict]) -> Tuple[int, int, List[dict]]:
     outdated_items = []
     for i, item in enumerate(portfolio):
         # Skip Cash and Liability for auto-updates
-        if item.get("Type") in ["現金", "負債"]:
+        # Support both new and old keys for safety during migration
+        atype = item.get("asset_class") or item.get("Type")
+        
+        if atype in ["現金", "負債"]:
             continue
             
-        if "Last_Update" not in item:
-            item["Last_Update"] = "N/A"
+        last_update = item.get("last_update") or item.get("Last_Update", "N/A")
         
-        if check_is_outdated(item["Last_Update"]):
+        if check_is_outdated(last_update):
             outdated_items.append((i, item))
             
     if not outdated_items:
@@ -207,23 +209,31 @@ def auto_update_portfolio(portfolio: List[dict]) -> Tuple[int, int, List[dict]]:
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit tasks
         future_to_index = {
-            executor.submit(fetch_single_price, item["Ticker"]): index
+            executor.submit(fetch_single_price, item.get("symbol") or item.get("Ticker")): index
             for index, item in outdated_items
         }
         
         # Collect results
         for future in as_completed(future_to_index):
             index = future_to_index[future]
+            item = portfolio[index]
+            ticker = item.get("symbol") or item.get("Ticker")
             try:
                 ok, price, err = future.result()
                 if ok:
-                    portfolio[index]["Manual_Price"] = price
-                    portfolio[index]["Last_Update"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    # Update with new keys
+                    portfolio[index]["manual_price"] = price
+                    portfolio[index]["last_update"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    # Remove legacy keys if present to clean up? Or keep?
+                    # Let's update legacy keys too if they exist to be safe
+                    if "Manual_Price" in portfolio[index]: portfolio[index]["Manual_Price"] = price
+                    if "Last_Update" in portfolio[index]: portfolio[index]["Last_Update"] = portfolio[index]["last_update"]
+                    
                     success_count += 1
-                    logger.debug(f"Updated {portfolio[index]['Ticker']}: {price}")
+                    logger.debug(f"Updated {ticker}: {price}")
                 else:
                     fail_count += 1
-                    logger.warning(f"Failed to update {portfolio[index]['Ticker']}: {err}")
+                    logger.warning(f"Failed to update {ticker}: {err}")
             except Exception as e:
                 fail_count += 1
                 logger.error(f"Exception updating asset at index {index}: {e}")
@@ -259,11 +269,22 @@ def get_market_data(
     base_currency = "TWD" if target_currency == "Auto" else target_currency
     
     for item in portfolio:
-        ticker = item["Ticker"]
-        asset_type = item["Type"] # Added access to Type
-        asset_currency = item.get("Currency", "USD")
-        manual_price = item.get("Manual_Price", 0.0)
-        last_update = item.get("Last_Update", "N/A")
+        ticker = item.get("symbol") or item.get("Ticker")
+        asset_type = item.get("asset_class") or item.get("Type")
+        asset_currency = item.get("currency") or item.get("Currency", "USD")
+        
+        manual_price = item.get("manual_price")
+        if manual_price is None: manual_price = item.get("Manual_Price", 0.0)
+            
+        last_update = item.get("last_update") or item.get("Last_Update", "N/A")
+        
+        qty = item.get("quantity")
+        if qty is None: qty = item.get("Quantity", 0.0)
+            
+        avg_cost = item.get("avg_cost")
+        if avg_cost is None: avg_cost = item.get("Avg_Cost", 0.0)
+            
+        account_id = item.get("account_id") or item.get("Account_ID", "default_main")
         
         current_price = 0.0
         daily_change_pct = 0.0
@@ -318,7 +339,7 @@ def get_market_data(
                     if manual_price > 0:
                         current_price = manual_price
                     else:
-                        current_price = item["Avg_Cost"]
+                        current_price = avg_cost
                         status = "⚠️ 僅顯示成本"
                     
                     dates = pd.date_range(end=datetime.today(), periods=30)
@@ -334,10 +355,10 @@ def get_market_data(
         
         # Standard Metrics in Base Currency (e.g. TWD)
         base_price = current_price * rate_multiplier
-        base_avg_cost = item["Avg_Cost"] * rate_multiplier
+        base_avg_cost = avg_cost * rate_multiplier
         
-        market_value_base = base_price * item["Quantity"]
-        total_cost_base = base_avg_cost * item["Quantity"]
+        market_value_base = base_price * qty
+        total_cost_base = base_avg_cost * qty
         
         # Net Value logic: Liabilities are negative contribution to Net Worth
         net_value_base = -market_value_base if asset_type == "負債" else market_value_base
@@ -362,9 +383,9 @@ def get_market_data(
         if target_currency == "Auto":
             # Display is Native
             display_price = current_price
-            display_cost_basis = item["Avg_Cost"]
-            display_market_value = current_price * item["Quantity"]
-            display_total_cost = display_cost_basis * item["Quantity"]
+            display_cost_basis = avg_cost
+            display_market_value = current_price * qty
+            display_total_cost = display_cost_basis * qty
             
             if asset_type == "負債":
                 display_pl = display_total_cost - display_market_value
@@ -382,7 +403,7 @@ def get_market_data(
         data_list.append({
             "Type": asset_type,
             "Ticker": ticker,
-            "Quantity": item["Quantity"],
+            "Quantity": qty,
             
             # Base Columns (Used for Totals/Sorting)
             "Current_Price": base_price,
@@ -405,8 +426,8 @@ def get_market_data(
             "Status": status,
             "Avg_Cost": base_avg_cost, # Keep for backward compat, but use Display_Cost_Basis in UI
             "Currency": asset_currency,
-            "Last_Update": item.get("Last_Update", "N/A"),
-            "Account_ID": item.get("Account_ID", "default_main"),
+            "Last_Update": last_update,
+            "Account_ID": account_id,
         })
     
     logger.info(f"Market data fetched for {len(data_list)} assets")

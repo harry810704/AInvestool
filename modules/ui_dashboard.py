@@ -12,11 +12,12 @@ import pandas as pd
 from typing import Optional
 
 from config import get_config
+from modules.data_loader import save_snapshot
 
 config = get_config()
 
 
-def render_dashboard(df_all: pd.DataFrame, c_symbol: str, total_val: float) -> None:
+def render_dashboard(df_all: pd.DataFrame, c_symbol: str, total_val: float, exchange_rate: float = 32.5) -> None:
     """
     Render the main dashboard view.
     
@@ -24,10 +25,49 @@ def render_dashboard(df_all: pd.DataFrame, c_symbol: str, total_val: float) -> N
         df_all: DataFrame with market data for all assets
         c_symbol: Currency symbol for display
         total_val: Total portfolio value
+        exchange_rate: USD to TWD exchange rate
     """
     if df_all.empty:
         st.info("目前無資產數據，請前往管理頁面新增。")
         return
+
+    # 0. Snapshot Button
+    c1, c2 = st.columns([0.8, 0.2])
+    with c2:
+        if st.button("📸 儲存今日快照", use_container_width=True, help="儲存當前總資產快照至歷史紀錄"):
+            # Calculate breakdown
+            breakdown = df_all.groupby('Type')['Market_Value'].sum().to_dict()
+            
+            # Determine TWD/USD total
+            # Assumes total_val is in Display Currency
+            is_usd = "$" in c_symbol and "NT" not in c_symbol
+            
+            if is_usd:
+                tot_usd = total_val
+                tot_twd = total_val * exchange_rate
+            else:
+                tot_twd = total_val
+                tot_usd = total_val / exchange_rate if exchange_rate > 0 else 0
+                
+            # Adjust breakdown to base if needed (breakdown computed from displayed df_all)
+            # If display is USD, breakdown is USD. save_snapshot expects 'value' (doesn't specify curr, but HistoryRecord has TWD/USD totals).
+            # The breakdown fields in HistoryRecord are us_stock_val, etc. usually in base currency (TWD).
+            # We should standardize breakdown to TWD for consistency or store both?
+            # Creating a simple map: Type -> TWD Value
+            breakdown_twd = {}
+            for k, v in breakdown.items():
+                if is_usd:
+                    breakdown_twd[k] = v * exchange_rate
+                else:
+                    breakdown_twd[k] = v
+                    
+            save_snapshot(tot_twd, tot_usd, breakdown_twd)
+            st.success("已儲存快照！")
+            
+    # 0.5 History Chart
+    if "history_data" in st.session_state and st.session_state.history_data:
+        with st.expander("📈 資產歷史趨勢", expanded=False):
+            render_history_chart(st.session_state.history_data, c_symbol)
 
     # 1. KPI 區塊
     st.markdown("### 🏆 總資產概況 (Net Worth)")
@@ -370,3 +410,44 @@ def render_single_category_detail(df_all: pd.DataFrame, total_val: float, c_symb
         fig_bar.update_layout(xaxis_title=None, yaxis_title=None, showlegend=False, height=250, margin=dict(t=0,b=0,l=0,r=0), coloraxis_showscale=False)
         fig_bar.update_traces(texttemplate='%{text:.1f}%', textposition='inside')
         st.plotly_chart(fig_bar, use_container_width=True)
+
+def render_history_chart(history: list, c_symbol: str):
+    """Render Net Worth History chart."""
+    if not history:
+        return
+        
+    df = pd.DataFrame(history)
+    if df.empty:
+        return
+        
+    # Line Chart: Total Net Worth
+    # Choose column based on symbol
+    y_col = "total_net_worth_usd" if "$" in c_symbol and "NT" not in c_symbol else "total_net_worth_twd"
+    
+    fig = px.line(df, x='date', y=y_col, title='總資產成長趨勢', markers=True)
+    fig.update_layout(
+        xaxis_title="日期",
+        yaxis_title=f"總值 ({c_symbol})",
+        height=300,
+        margin=dict(l=20, r=20, t=40, b=20),
+        plot_bgcolor='rgba(0,0,0,0)',
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Stacked Area: Asset Classes
+    # We have columns: us_stock_val, tw_stock_val, cash_val, crypto_val, loan_val
+    # We need to melt them for area chart? Or just use specific cols
+    cols = ["us_stock_val", "tw_stock_val", "cash_val", "crypto_val", "loan_val"]
+    # Filter cols that exist
+    cols = [c for c in cols if c in df.columns]
+    
+    if cols:
+        fig_area = px.area(df, x='date', y=cols, title='資產類別堆疊圖')
+        fig_area.update_layout(
+            xaxis_title="日期",
+            yaxis_title="價值 (TWD)", # History breakdown usually stored in Base
+            height=300,
+            margin=dict(l=20, r=20, t=40, b=20),
+            plot_bgcolor='rgba(0,0,0,0)',
+        )
+        st.plotly_chart(fig_area, use_container_width=True)

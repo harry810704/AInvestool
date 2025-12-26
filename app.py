@@ -18,7 +18,7 @@ from modules.drive_manager import (
     credentials_from_dict,
     get_user_info,
 )
-from modules.data_loader import load_portfolio, save_portfolio, load_allocation_settings, load_accounts, save_accounts
+from modules.data_loader import load_all_data, save_all_data
 from modules.market_service import (
     get_exchange_rate,
     get_market_data,
@@ -36,12 +36,66 @@ config = get_config()
 logger = get_logger(__name__)
 state = get_state_manager()
 
-# Page configuration
+# Page configuration - MUST be the first Streamlit command
 st.set_page_config(
     page_title=config.ui.page_title,
     layout=config.ui.layout,
     page_icon=config.ui.page_icon
 )
+
+# Initialize session state (no UI output)
+state.initialize()
+
+# Load ALL data (Portfolio, Accounts, Settings, History)
+if not state.load_portfolio:
+    if config.dev_mode:
+        logger.info("DEV_MODE: Loading from local portfolio.xlsx")
+    else:
+        logger.info("Loading from Google Drive")
+        
+    with st.spinner("正在讀取資料..."):
+        accounts, assets, settings, history = load_all_data()
+        
+        state.accounts = accounts
+        state.portfolio = assets
+        state.allocation_targets = settings
+        state.history_data = history
+            
+    state.load_portfolio = True
+    # Force market data refresh when portfolio is loaded
+    st.session_state["force_refresh_market_data"] = True
+
+# Sidebar
+with st.sidebar:
+    if config.dev_mode:
+        st.warning("🔧 DEV MODE")
+        st.caption("開發模式：使用本地檔案")
+    else:
+        st.success("已連線 ✅")
+    
+    # Display user info
+    if state.user_info:
+        st.markdown(f"**👤 {state.user_info.get('name', 'User')}**")
+        st.caption(state.user_info.get('email', ''))
+    
+    if not config.dev_mode:
+        if st.button("🚪 登出", use_container_width=True):
+            handle_logout()
+    else:
+        st.caption("開發模式下無需登出")
+
+# Auto-update portfolio prices
+if state.portfolio and not state.has_auto_updated:
+    logger.info("Starting automatic portfolio update")
+    with st.status("🔄 正在檢查並更新資產價格...", expanded=True) as status:
+        success, fail, updated_portfolio = auto_update_portfolio(state.portfolio)
+        state.portfolio = updated_portfolio
+        
+        if success > 0:
+            # Save ALL data
+            save_all_data(state.accounts, state.portfolio, state.allocation_targets, state.history_data)
+            st.session_state["force_refresh_market_data"] = True
+            logger.info(f"Portfolio updated: {success} success, {fail} failed")
 
 logger.info("Application started")
 
@@ -314,15 +368,16 @@ if not state.load_portfolio and not state.portfolio:
 
         if not loaded:
             logger.info("No local portfolio found, creating default")
-            portfolio = [{
-                "Type": "美股",
-                "Ticker": "AAPL",
-                "Quantity": 10,
-                "Avg_Cost": 150.0,
-                "Currency": "USD",
-                "Manual_Price": 0.0,
-                "Last_Update": "N/A",
-            }]
+                portfolio = [{
+                    "asset_class": "美股",
+                    "symbol": "AAPL",
+                    "quantity": 10,
+                    "avg_cost": 150.0,
+                    "currency": "USD",
+                    "manual_price": 0.0,
+                    "last_update": "N/A",
+                    "account_id": "default_main"
+                }]
         
         # Normalize keys/data (important for dev mode to match prod behavior)
         # This handles missing Account_ID etc.
@@ -354,13 +409,14 @@ if not state.load_portfolio and not state.portfolio:
             if not portfolio:
                 logger.info("No portfolio found, creating default")
                 portfolio = [{
-                    "Type": "美股",
-                    "Ticker": "AAPL",
-                    "Quantity": 10,
-                    "Avg_Cost": 150.0,
-                    "Currency": "USD",
-                    "Manual_Price": 0.0,
-                    "Last_Update": "N/A",
+                    "asset_class": "美股",
+                    "symbol": "AAPL",
+                    "quantity": 10,
+                    "avg_cost": 150.0,
+                    "currency": "USD",
+                    "manual_price": 0.0,
+                    "last_update": "N/A",
+                    "account_id": "default_main"
                 }]
                 save_portfolio(portfolio)
             state.portfolio = portfolio
@@ -491,7 +547,7 @@ else:
 tab1, tab2, tab3 = st.tabs(["📊 投資戰情室", "⚙️ 設定與管理", "📈 風險分析"])
 
 with tab1:
-    render_dashboard(df_all, c_symbol, total_val)
+    render_dashboard(df_all, c_symbol, total_val, current_usd_twd)
 
 with tab2:
     render_manager(df_all, c_symbol, total_val)
