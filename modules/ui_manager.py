@@ -714,7 +714,7 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
 
         # 顯示清單表格
         draft_df = pd.DataFrame(st.session_state.draft_actions)
-        st.dataframe(draft_df, use_container_width=True)
+        st.dataframe(draft_df, use_container_width=True, key="draft_actions_table")
 
         total_planned = draft_df["Total"].sum()
         st.markdown(f"#### 總計畫投入金額: :green[{c_symbol}{total_planned:,.0f}]")
@@ -930,9 +930,14 @@ def render_asset_list_section(df_market_data, c_symbol):
         
         # Get the original index stored in the column
         original_idx = df_merged.iloc[selected_row_index]["Original_Index"]
-        item = st.session_state.portfolio[original_idx]
         
-        asset_action_dialog(original_idx, item)
+        # Validate index to prevent crash if stale
+        if 0 <= original_idx < len(st.session_state.portfolio):
+            item = st.session_state.portfolio[original_idx]
+            asset_action_dialog(original_idx, item)
+        else:
+            st.warning("此資產似已被刪除，請重新刷新頁面")
+            st.rerun()
 
 
 
