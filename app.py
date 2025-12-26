@@ -267,23 +267,48 @@ if not state.load_portfolio and not state.portfolio:
         portfolio = []
         loaded = False
 
-        # Try Excel
-        if os.path.exists(config.google_drive.portfolio_filename):
+        # Custom Dev Mode Loader: Load newest of xlsx or csv
+        xl_path = config.google_drive.portfolio_filename
+        csv_path = config.google_drive.legacy_portfolio_filename # or "my_portfolio.csv"
+        
+        load_xlsx = False
+        load_csv = False
+        
+        # Check existence
+        has_xl = os.path.exists(xl_path)
+        has_csv = os.path.exists(csv_path)
+        
+        target_file = None
+        
+        if has_xl and has_csv:
+            # Compare modification time
+            if os.path.getmtime(xl_path) >= os.path.getmtime(csv_path):
+                target_file = "xlsx"
+            else:
+                target_file = "csv"
+        elif has_xl:
+            target_file = "xlsx"
+        elif has_csv:
+            target_file = "csv"
+            
+        # Load based on target
+        if target_file == "xlsx":
             try:
-                df = pd.read_excel(config.google_drive.portfolio_filename)
+                df = pd.read_excel(xl_path)
                 portfolio = df.to_dict('records')
                 loaded = True
-                logger.info(f"Loaded {len(portfolio)} assets from local Excel")
+                logger.info(f"Loaded {len(portfolio)} assets from local Excel ({xl_path})")
             except Exception as e:
                 logger.error(f"Failed to load local Excel: {e}")
+                # Fallback to csv if exists?
+                if has_csv: target_file = "csv"
 
-        # Try Legacy CSV if not loaded
-        if not loaded and os.path.exists(config.google_drive.legacy_portfolio_filename):
+        if target_file == "csv" or (not loaded and has_csv):
             try:
-                df = pd.read_csv(config.google_drive.legacy_portfolio_filename)
+                df = pd.read_csv(csv_path)
                 portfolio = df.to_dict('records')
                 loaded = True
-                logger.info(f"Loaded {len(portfolio)} assets from local CSV")
+                logger.info(f"Loaded {len(portfolio)} assets from local CSV ({csv_path})")
             except Exception as e:
                 logger.error(f"Failed to load local CSV: {e}")
 

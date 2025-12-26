@@ -139,11 +139,23 @@ def save_portfolio(portfolio: List[dict]) -> None:
     
     # Check if in dev mode
     if config.dev_mode:
-        # Save to local CSV file
+        import os
+        xl_path = config.google_drive.portfolio_filename
+        csv_path = config.google_drive.legacy_portfolio_filename # Ensure this maps to "my_portfolio.csv" or explicit string
+        
         try:
             df = pd.DataFrame(validated_portfolio)
-            df.to_csv("my_portfolio.csv", index=False)
-            logger.info(f"DEV_MODE: Saved {len(validated_portfolio)} assets to local CSV")
+            
+            # If my_portfolio.xlsx exists, save to CSV to avoid overwrite
+            if os.path.exists(xl_path):
+                # We could save to csv fallback
+                config_csv_name = getattr(config.google_drive, "legacy_portfolio_filename", "my_portfolio.csv")
+                df.to_csv(config_csv_name, index=False)
+                logger.info(f"DEV_MODE: Excel file exists, saved {len(validated_portfolio)} assets to {config_csv_name}")
+            else:
+                # If no Excel file, create it
+                df.to_excel(xl_path, index=False)
+                logger.info(f"DEV_MODE: Created {xl_path} with {len(validated_portfolio)} assets")
             return
         except Exception as e:
             logger.error(f"Failed to save portfolio to local file: {e}")
