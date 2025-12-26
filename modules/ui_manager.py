@@ -983,6 +983,17 @@ def render_asset_list_section(df_market_data, c_symbol):
     # Create editable columns
     df_merged["Account_Name"] = df_merged["Account_ID"].map(lambda x: accounts_map.get(x, "未知"))
     
+    # Normalize Quantity/Avg_Cost to Title Case if needed for Editor consistency
+    if "quantity" in df_merged.columns and "Quantity" not in df_merged.columns:
+         df_merged["Quantity"] = df_merged["quantity"]
+    if "Quantity" not in df_merged.columns:
+         df_merged["Quantity"] = 0.0
+
+    if "avg_cost" in df_merged.columns and "Avg_Cost" not in df_merged.columns:
+         df_merged["Avg_Cost"] = df_merged["avg_cost"]
+    if "Avg_Cost" not in df_merged.columns:
+         df_merged["Avg_Cost"] = 0.0
+
     # Add Selection Column
     df_merged["Select"] = False
     
