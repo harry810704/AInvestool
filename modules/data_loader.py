@@ -191,12 +191,16 @@ def load_all_data() -> Tuple[List[dict], List[dict], Dict[str, float], List[dict
     if not dfs:
         dfs = _migrate_legacy_data(service)
         # Auto-save immediately to upgrade
-        save_all_data(
-            dfs[SHEET_ACCOUNTS].to_dict('records'),
-            dfs[SHEET_ASSETS].to_dict('records'),
-            _parse_settings(dfs[SHEET_SETTINGS].to_dict('records')),
-            dfs[SHEET_HISTORY].to_dict('records')
-        )
+        # Auto-save immediately to upgrade
+        try:
+            save_all_data(
+                dfs[SHEET_ACCOUNTS].to_dict('records'),
+                dfs[SHEET_ASSETS].to_dict('records'),
+                _parse_settings(dfs[SHEET_SETTINGS].to_dict('records')),
+                dfs[SHEET_HISTORY].to_dict('records')
+            )
+        except Exception as e:
+            logger.warning(f"Could not auto-save migrated data: {e}")
     
     # 3. Parse DataFrames into Models
     
