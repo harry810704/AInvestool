@@ -368,16 +368,16 @@ if not state.load_portfolio and not state.portfolio:
 
         if not loaded:
             logger.info("No local portfolio found, creating default")
-                portfolio = [{
-                    "asset_class": "美股",
-                    "symbol": "AAPL",
-                    "quantity": 10,
-                    "avg_cost": 150.0,
-                    "currency": "USD",
-                    "manual_price": 0.0,
-                    "last_update": "N/A",
-                    "account_id": "default_main"
-                }]
+            portfolio = [{
+                "asset_class": "美股",
+                "symbol": "AAPL",
+                "quantity": 10,
+                "avg_cost": 150.0,
+                "currency": "USD",
+                "manual_price": 0.0,
+                "last_update": "N/A",
+                "account_id": "default_main"
+            }]
         
         # Normalize keys/data (important for dev mode to match prod behavior)
         # This handles missing Account_ID etc.
