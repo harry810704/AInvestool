@@ -486,3 +486,44 @@ def save_excel_to_drive(service: Resource, filename: str, data: Any) -> None:
     except Exception as e:
         logger.error(f"Failed to save Excel '{filename}': {e}")
         st.error(f"Excel 存檔失敗: {e}")
+
+
+def upload_file_stream(
+    service: Resource, 
+    file_obj: io.BytesIO, 
+    filename: str, 
+    folder_name: str, 
+    mime_type: str = "application/octet-stream"
+) -> None:
+    """
+    Upload a file stream to Google Drive.
+    
+    Args:
+        service: Google Drive service instance
+        file_obj: File object to upload
+        filename: Name of file
+        folder_name: Name of parent folder (used for logging/verification)
+        mime_type: MIME type of file
+    """
+    try:
+        # Note: ensure_folder_exists currently uses config.google_drive.folder_name
+        # We assume folder_name passed here matches or we default to config
+        folder_id = ensure_folder_exists(service)
+        
+        file_id = get_file_id(service, folder_id, filename)
+        
+        media = MediaIoBaseUpload(file_obj, mimetype=mime_type, resumable=True)
+        
+        if file_id:
+            service.files().update(fileId=file_id, media_body=media).execute()
+            logger.info(f"Updated '{filename}' via stream")
+        else:
+            file_metadata = {"name": filename, "parents": [folder_id]}
+            service.files().create(
+                body=file_metadata, media_body=media, fields="id"
+            ).execute()
+            logger.info(f"Created '{filename}' via stream")
+            
+    except Exception as e:
+        logger.error(f"Failed to upload stream '{filename}': {e}")
+        st.error(f"上傳失敗: {e}")

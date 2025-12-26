@@ -169,10 +169,11 @@ def load_all_data() -> Tuple[List[dict], List[dict], Dict[str, float], List[dict
             # Ideally modules/drive_manager.py should expose a `download_file_bytes` function.
             # For now, we reuse the logic: search file -> get_media -> BytesIO -> pd.read_excel(..., sheet_name=None)
             
-            from modules.drive_manager import _get_file_id
+            from modules.drive_manager import get_file_id, ensure_folder_exists
             from googleapiclient.http import MediaIoBaseDownload
             
-            file_id = _get_file_id(service, PORTFOLIO_FILENAME, config.google_drive.folder_name)
+            folder_id = ensure_folder_exists(service)
+            file_id = get_file_id(service, folder_id, PORTFOLIO_FILENAME)
             if file_id:
                 request = service.files().get_media(fileId=file_id)
                 fh = io.BytesIO()

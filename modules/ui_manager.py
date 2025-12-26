@@ -775,7 +775,7 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
 
         # 顯示清單表格
         draft_df = pd.DataFrame(st.session_state.draft_actions)
-        st.dataframe(draft_df, use_container_width=True, key="draft_actions_table")
+        st.dataframe(draft_df, width="stretch", key="draft_actions_table")
 
         total_planned = draft_df["Total"].sum()
         st.markdown(f"#### 總計畫投入金額: :green[{c_symbol}{total_planned:,.0f}]")
@@ -1013,7 +1013,7 @@ def render_asset_list_section(df_market_data, c_symbol):
             "Status": st.column_config.TextColumn("狀態", width="small"),
         },
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
         on_select="rerun",
         selection_mode="single-row"
     )

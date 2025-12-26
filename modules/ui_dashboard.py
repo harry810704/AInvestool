@@ -393,7 +393,7 @@ def render_single_category_detail(df_all: pd.DataFrame, total_val: float, c_symb
                 "Last_Update": st.column_config.TextColumn("更新時間", width="medium"),
             },
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
             height=500
         )
 
