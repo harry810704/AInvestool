@@ -102,8 +102,8 @@ def asset_action_dialog(index, asset):
     st.caption(f"類別: {atype} | 幣別: {curr}")
 
     # We use tabs for different actions
-    tab_buy, tab_sell, tab_edit, tab_risk, tab_del = st.tabs(
-        ["➕ 加倉 (Buy)", "➖ 減倉 (Sell)", "✏️ 修正 (Edit)", "📈 風控 (Risk)", "🗑️ 刪除 (Delete)"]
+    tab_buy, tab_sell, tab_edit, tab_move, tab_risk, tab_del = st.tabs(
+        ["➕ 加倉 (Buy)", "➖ 減倉 (Sell)", "✏️ 修正 (Edit)", "💸 轉帳 (Move)", "📈 風控 (Risk)", "🗑️ 刪除 (Delete)"]
     )
 
     with tab_buy:
@@ -207,6 +207,33 @@ def asset_action_dialog(index, asset):
             st.session_state["force_refresh_market_data"] = True
             st.success("數據已更新")
             st.rerun()
+
+    with tab_move:
+        st.markdown("#### 無損移轉 (不影響損益)")
+        st.caption("將資產移動至另一個帳戶，例如：從主要帳戶移動至美股帳戶。")
+        
+        # Account selection for transfer
+        accounts = st.session_state.get("accounts", [])
+        acc_options = {acc["name"]: str(acc.get("account_id") or acc.get("id")) for acc in accounts} if accounts else {"主要帳戶": "default_main"}
+        curr_acc_id = asset.get("account_id") or asset.get("Account_ID", "default_main")
+        
+        # Filter out current account
+        target_acc_names = [name for name, aid in acc_options.items() if aid != curr_acc_id]
+        
+        if not target_acc_names:
+            st.info("沒有其他帳戶可供移轉。請先新增帳戶。")
+        else:
+            target_name = st.selectbox("移轉至目標帳戶", target_acc_names, key=f"move_acc_{index}")
+            
+            if st.button("確認移轉", key=f"btn_move_{index}", type="primary", use_container_width=True):
+                target_id = acc_options[target_name]
+                asset["account_id"] = target_id
+                if "Account_ID" in asset: asset["Account_ID"] = target_id
+                
+                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
+                st.session_state["force_refresh_market_data"] = True
+                st.success(f"已移轉至 {target_name}")
+                st.rerun()
 
     with tab_risk:
         st.markdown("### 🎯 ATR 風控建議")
@@ -891,11 +918,15 @@ def render_asset_list_section(df_market_data, c_symbol):
 
     if not df_market_data.empty:
         # Select only columns that exist in df_market_data
-        merge_cols = ["Ticker", "Market_Value", "Avg_Cost"]
-        if "Current_Price" in df_market_data.columns:
-            merge_cols.append("Current_Price")
-        if "Last_Update" in df_market_data.columns:
-            merge_cols.append("Last_Update")
+        # Select only columns that exist in df_market_data
+        merge_cols = [
+            "Ticker", "Market_Value", "Avg_Cost", 
+            "Current_Price", "Last_Update", "ROI (%)", "Status",
+            "Display_Price", "Display_Cost_Basis", "Display_Market_Value", 
+            "Display_Total_Cost", "Display_PL", "Display_Currency"
+        ]
+        # Filter to only those actually in df_market_data
+        merge_cols = [c for c in merge_cols if c in df_market_data.columns]
         
         df_merged = pd.merge(
             df_raw, df_market_data[merge_cols], on="Ticker", how="left"
@@ -944,17 +975,27 @@ def render_asset_list_section(df_market_data, c_symbol):
     # Display Dataframe with Selection
     event = st.dataframe(
         df_merged,
-        key="manager_asset_table",
-        column_order=["Type", "Ticker", "Quantity", "Avg_Cost", "Current_Price", "Market_Value", "Last_Update", "Account_Name"],
+        key=f"manager_asset_table_{int(datetime.now().timestamp())}", # Force refresh columns
+        column_order=[
+            "Type", "Ticker", "Display_Currency", "Display_Price", 
+            "Display_Cost_Basis", "Quantity", "Display_Market_Value", 
+            "Display_Total_Cost", "Display_PL", "ROI (%)", 
+            "Last_Update", "Account_Name", "Status"
+        ],
         column_config={
             "Type": st.column_config.TextColumn("類別", width="small"),
             "Ticker": st.column_config.TextColumn("代號", width="small", pinned=True),
+            "Display_Currency": st.column_config.TextColumn("幣別", width="small"),
+            "Display_Price": st.column_config.NumberColumn("現價 (原幣)", format="%.2f"),
+            "Display_Cost_Basis": st.column_config.NumberColumn("成本 (原幣)", format="%.2f"),
             "Quantity": st.column_config.NumberColumn("持倉", format="%.2f"),
-            "Avg_Cost": st.column_config.NumberColumn("成本", format="%.2f"),
-            "Current_Price": st.column_config.NumberColumn("現價", format="%.2f"),
-            "Market_Value": st.column_config.NumberColumn(f"市值 ({c_symbol})", format=f"{c_symbol}%.0f"),
+            "Display_Market_Value": st.column_config.NumberColumn("市值 (原幣)", format="%.0f"),
+            "Display_Total_Cost": st.column_config.NumberColumn("總成本 (原幣)", format="%.0f"),
+            "Display_PL": st.column_config.NumberColumn("損益 (原幣)", format="%.0f"),
+            "ROI (%)": st.column_config.NumberColumn("ROI", format="%.1f%%"),
             "Last_Update": st.column_config.TextColumn("更新時間", width="medium"),
             "Account_Name": st.column_config.TextColumn("帳戶", width="small"),
+            "Status": st.column_config.TextColumn("狀態", width="small"),
         },
         hide_index=True,
         use_container_width=True,
