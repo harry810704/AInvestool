@@ -243,7 +243,6 @@ def render_risk_analysis(portfolio: list, c_symbol: str):
     # Calculate button
     if st.button("🔍 執行分析", type="primary", use_container_width=True):
         with st.spinner(f"正在分析 {selected_ticker}..."):
-        with st.spinner(f"正在分析 {selected_ticker}..."):
             # Get current price from manual price or avg cost
             man_price = selected_asset.get("manual_price")
             if man_price is None: man_price = selected_asset.get("Manual_Price", 0.0)
