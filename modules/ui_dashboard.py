@@ -323,6 +323,7 @@ def render_single_category_detail(df_all: pd.DataFrame, total_val: float, c_symb
 
         st.dataframe(
             display_df,
+            key="dashboard_holdings_table",
             column_config={
                 "Ticker": st.column_config.TextColumn("代號", width="small", pinned=True),
                 "Quantity": st.column_config.NumberColumn("持倉", format="%.2f"),

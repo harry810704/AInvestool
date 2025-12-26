@@ -926,6 +926,7 @@ def render_asset_list_section(df_market_data, c_symbol):
     # Display Dataframe with Selection
     event = st.dataframe(
         df_merged,
+        key="manager_asset_table",
         column_order=["Type", "Ticker", "Quantity", "Avg_Cost", "Current_Price", "Market_Value", "Last_Update", "Account_Name"],
         column_config={
             "Type": st.column_config.TextColumn("類別", width="small"),
