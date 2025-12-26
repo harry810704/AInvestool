@@ -915,6 +915,17 @@ def render_asset_list_section(df_market_data, c_symbol):
     # Prepare Data
     df_raw = pd.DataFrame(st.session_state.portfolio)
     df_raw["Original_Index"] = df_raw.index
+    
+    # Normalize 'Ticker' column for merging
+    if "symbol" in df_raw.columns:
+        df_raw["Ticker"] = df_raw["symbol"]
+    elif "Ticker" not in df_raw.columns:
+        # Fallback if neither exists (shouldn't happen with valid data)
+        df_raw["Ticker"] = ""
+        
+    # Also normalize other keys if needed by UI later
+    if "asset_class" in df_raw.columns and "Type" not in df_raw.columns:
+        df_raw["Type"] = df_raw["asset_class"]
 
     if not df_market_data.empty:
         # Select only columns that exist in df_market_data
