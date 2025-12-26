@@ -927,14 +927,16 @@ def render_asset_list_section(df_market_data, c_symbol):
         df_raw["Type"] = df_raw["asset_class"]
 
     # Normalize Quantity/Avg_Cost to Title Case (Original Values) BEFORE merge
-    if "quantity" in df_raw.columns and "Quantity" not in df_raw.columns:
+    if "quantity" in df_raw.columns:
          df_raw["Quantity"] = df_raw["quantity"]
-    if "Quantity" not in df_raw.columns:
+    elif "Quantity" not in df_raw.columns:
          df_raw["Quantity"] = 0.0
 
-    if "avg_cost" in df_raw.columns and "Avg_Cost" not in df_raw.columns:
+    if "avg_cost" in df_raw.columns:
+         # Always prefer snake_case 'avg_cost' as it is the canonical source from models.py
+         # This fixes the bug where corrupted 'Avg_Cost' (converted value) was persisting.
          df_raw["Avg_Cost"] = df_raw["avg_cost"]
-    if "Avg_Cost" not in df_raw.columns:
+    elif "Avg_Cost" not in df_raw.columns:
          df_raw["Avg_Cost"] = 0.0
 
     if not df_market_data.empty:

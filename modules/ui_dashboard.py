@@ -325,7 +325,7 @@ def render_single_category_detail(df_all: pd.DataFrame, total_val: float, c_symb
         category: Asset category to display
     """
     # Filter data
-    cat_df = df_all[df_all['Type'] == category]
+    cat_df = df_all[df_all['Type'] == category].copy()
     
     if cat_df.empty:
         st.warning("此類別無資料")
