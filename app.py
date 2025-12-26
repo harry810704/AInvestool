@@ -248,19 +248,19 @@ if state.portfolio and not state.has_auto_updated: # Changed from 'portfolio' in
             logger.info(f"Portfolio updated: {success} success, {fail} failed")
         
         if fail > 0:
-            st.status.update(
+            status.update(
                 label=f"更新完成: {success} 成功, {fail} 失敗",
                 state="error",
                 expanded=False,
             )
         elif success > 0:
-            st.status.update(
+            status.update(
                 label=f"更新完成: {success} 筆資產已同步",
                 state="complete",
                 expanded=False,
             )
         else:
-            st.status.update(
+            status.update(
                 label="資產價格皆為最新",
                 state="complete",
                 expanded=False
