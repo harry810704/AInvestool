@@ -966,7 +966,11 @@ def render_asset_list_section(df_market_data, c_symbol):
         df_merged["Last_Update"] = "N/A"
 
     # Account Name Mapping
-    accounts_map = {acc["id"]: acc["name"] for acc in st.session_state.get("accounts", [])}
+    # Account Name Mapping
+    accounts_map = {
+        acc.get("account_id") or acc.get("id"): acc.get("name") 
+        for acc in st.session_state.get("accounts", [])
+    }
     # Ensure columns are clean strings and remove duplicates
     df_merged.columns = df_merged.columns.astype(str).str.strip()
     df_merged = df_merged.loc[:, ~df_merged.columns.duplicated()]
