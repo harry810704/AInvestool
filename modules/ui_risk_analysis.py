@@ -161,7 +161,14 @@ def render_risk_analysis(portfolio: list, c_symbol: str):
         return
     
     # Create selection dropdown
-    ticker_options = [f"{asset['Ticker']} ({asset['Type']})" for asset in portfolio]
+    # Create selection dropdown
+    # Map keys safely
+    ticker_options = []
+    for asset in portfolio:
+        t = asset.get("symbol") or asset.get("Ticker")
+        ty = asset.get("asset_class") or asset.get("Type")
+        ticker_options.append(f"{t} ({ty})")
+        
     selected_option = st.selectbox(
         "選擇要分析的持倉",
         ticker_options,
@@ -173,7 +180,8 @@ def render_risk_analysis(portfolio: list, c_symbol: str):
     
     # Get selected asset
     selected_ticker = selected_option.split(" (")[0]
-    selected_asset = next((a for a in portfolio if a['Ticker'] == selected_ticker), None)
+    # Match by symbol/Ticker
+    selected_asset = next((a for a in portfolio if (a.get("symbol") or a.get("Ticker")) == selected_ticker), None)
     
     if not selected_asset:
         st.error("找不到選擇的資產")
@@ -181,10 +189,21 @@ def render_risk_analysis(portfolio: list, c_symbol: str):
     
     # Display asset info
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("代號", selected_asset['Ticker'])
-    col2.metric("類型", selected_asset['Type'])
-    col3.metric("持有數量", f"{selected_asset['Quantity']:.2f}")
-    col4.metric("平均成本", f"{selected_asset['Currency']} {selected_asset['Avg_Cost']:.2f}")
+    
+    a_ticker = selected_asset.get("symbol") or selected_asset.get("Ticker")
+    a_type = selected_asset.get("asset_class") or selected_asset.get("Type")
+    a_qty = selected_asset.get("quantity")
+    if a_qty is None: a_qty = selected_asset.get("Quantity", 0.0)
+    
+    a_cost = selected_asset.get("avg_cost")
+    if a_cost is None: a_cost = selected_asset.get("Avg_Cost", 0.0)
+    
+    a_curr = selected_asset.get("currency") or selected_asset.get("Currency", "USD")
+
+    col1.metric("代號", a_ticker)
+    col2.metric("類型", a_type)
+    col3.metric("持有數量", f"{a_qty:.2f}")
+    col4.metric("平均成本", f"{a_curr} {a_cost:.2f}")
     
     st.divider()
     
@@ -224,15 +243,20 @@ def render_risk_analysis(portfolio: list, c_symbol: str):
     # Calculate button
     if st.button("🔍 執行分析", type="primary", use_container_width=True):
         with st.spinner(f"正在分析 {selected_ticker}..."):
+        with st.spinner(f"正在分析 {selected_ticker}..."):
             # Get current price from manual price or avg cost
-            current_price = selected_asset.get('Manual_Price', selected_asset['Avg_Cost'])
+            man_price = selected_asset.get("manual_price")
+            if man_price is None: man_price = selected_asset.get("Manual_Price", 0.0)
+            
+            # Using already resolved variables
+            current_price = man_price if man_price > 0 else a_cost
             if current_price == 0:
-                current_price = selected_asset['Avg_Cost']
+                current_price = a_cost
             
             # Calculate SL/TP
             result = suggest_sl_tp_for_holding(
                 ticker=selected_ticker,
-                avg_cost=selected_asset['Avg_Cost'],
+                avg_cost=a_cost,
                 current_price=current_price,
                 atr_multiplier=atr_multiplier,
                 r_ratio=r_ratio,
@@ -291,7 +315,7 @@ def render_risk_analysis(portfolio: list, c_symbol: str):
             st.markdown(f"""
             <div style='background-color: #ffebee; padding: 20px; border-radius: 10px; border-left: 5px solid #f44336;'>
                 <h3 style='margin: 0; color: #c62828;'>🔴 建議停損價</h3>
-                <h1 style='margin: 10px 0; color: #c62828;'>{asset['Currency']} {result['sl_price']:.2f}</h1>
+                <h1 style='margin: 10px 0; color: #c62828;'>{a_curr} {result['sl_price']:.2f}</h1>
                 <p style='margin: 0; color: #666;'>風險: {c_symbol}{result['current_risk']:.2f} / 股</p>
             </div>
             """, unsafe_allow_html=True)
@@ -300,7 +324,7 @@ def render_risk_analysis(portfolio: list, c_symbol: str):
             st.markdown(f"""
             <div style='background-color: #e8f5e9; padding: 20px; border-radius: 10px; border-left: 5px solid #4caf50;'>
                 <h3 style='margin: 0; color: #2e7d32;'>🟢 建議停利價</h3>
-                <h1 style='margin: 10px 0; color: #2e7d32;'>{asset['Currency']} {result['tp_price']:.2f}</h1>
+                <h1 style='margin: 10px 0; color: #2e7d32;'>{a_curr} {result['tp_price']:.2f}</h1>
                 <p style='margin: 0; color: #666;'>目標: {c_symbol}{result['current_reward']:.2f} / 股</p>
             </div>
             """, unsafe_allow_html=True)
@@ -323,7 +347,7 @@ def render_risk_analysis(portfolio: list, c_symbol: str):
                     selected_ticker,
                     sl_price=result['sl_price'],
                     tp_price=result['tp_price'],
-                    avg_cost=asset['Avg_Cost']
+                    avg_cost=a_cost
                 )
                 st.plotly_chart(fig, use_container_width=True)
                 
@@ -331,13 +355,14 @@ def render_risk_analysis(portfolio: list, c_symbol: str):
                 with st.expander("📊 詳細統計資訊"):
                     stat_col1, stat_col2, stat_col3 = st.columns(3)
                     
+                    
                     current_price = hist_data['Close'].iloc[-1]
-                    price_change = current_price - asset['Avg_Cost']
-                    price_change_pct = (price_change / asset['Avg_Cost'] * 100) if asset['Avg_Cost'] > 0 else 0
+                    price_change = current_price - a_cost
+                    price_change_pct = (price_change / a_cost * 100) if a_cost > 0 else 0
                     
                     stat_col1.metric(
                         "當前價格",
-                        f"{asset['Currency']} {current_price:.2f}",
+                        f"{a_curr} {current_price:.2f}",
                         f"{price_change_pct:+.2f}%"
                     )
                     
@@ -359,9 +384,9 @@ def render_risk_analysis(portfolio: list, c_symbol: str):
                     
                     # Position value
                     st.divider()
-                    position_value = current_price * asset['Quantity']
-                    total_risk = result['current_risk'] * asset['Quantity']
-                    total_reward = result['current_reward'] * asset['Quantity']
+                    position_value = current_price * a_qty
+                    total_risk = result['current_risk'] * a_qty
+                    total_reward = result['current_reward'] * a_qty
                     
                     st.markdown(f"""
                     **持倉價值分析:**
