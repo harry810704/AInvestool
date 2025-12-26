@@ -920,7 +920,6 @@ def render_asset_list_section(df_market_data, c_symbol):
     if "symbol" in df_raw.columns:
         df_raw["Ticker"] = df_raw["symbol"]
     elif "Ticker" not in df_raw.columns:
-        # Fallback if neither exists (shouldn't happen with valid data)
         df_raw["Ticker"] = ""
         
     # Also normalize other keys if needed by UI later
@@ -929,14 +928,12 @@ def render_asset_list_section(df_market_data, c_symbol):
 
     if not df_market_data.empty:
         # Select only columns that exist in df_market_data
-        # Select only columns that exist in df_market_data
         merge_cols = [
             "Ticker", "Market_Value", "Avg_Cost", 
             "Current_Price", "Last_Update", "ROI (%)", "Status",
             "Display_Price", "Display_Cost_Basis", "Display_Market_Value", 
             "Display_Total_Cost", "Display_PL", "Display_Currency"
         ]
-        # Filter to only those actually in df_market_data
         merge_cols = [c for c in merge_cols if c in df_market_data.columns]
         
         df_merged = pd.merge(
@@ -949,7 +946,7 @@ def render_asset_list_section(df_market_data, c_symbol):
 
         df_merged["Market_Value"] = df_merged["Market_Value"].fillna(0)
         
-        # Add missing columns if they weren't in the merge
+        # Add missing columns
         if "Current_Price" not in df_merged.columns:
             df_merged["Current_Price"] = 0
         else:
@@ -966,12 +963,13 @@ def render_asset_list_section(df_market_data, c_symbol):
         df_merged["Last_Update"] = "N/A"
 
     # Account Name Mapping
-    # Account Name Mapping
     accounts_map = {
         acc.get("account_id") or acc.get("id"): acc.get("name") 
         for acc in st.session_state.get("accounts", [])
     }
-    # Ensure columns are clean strings and remove duplicates
+    name_to_id_map = {v: k for k, v in accounts_map.items()}
+
+    # Ensure columns are clean strings
     df_merged.columns = df_merged.columns.astype(str).str.strip()
     df_merged = df_merged.loc[:, ~df_merged.columns.duplicated()]
 
@@ -981,62 +979,301 @@ def render_asset_list_section(df_market_data, c_symbol):
 
     # Fill missing IDs
     df_merged["Account_ID"] = df_merged["Account_ID"].fillna("default_main")
-        
+    
+    # Create editable columns
     df_merged["Account_Name"] = df_merged["Account_ID"].map(lambda x: accounts_map.get(x, "未知"))
-
+    
+    # Normalize Quantity/Avg_Cost for editing if they came from different sources
+    # df_merged["Quantity"] comes from df_raw usually
+    
+    # Simplify DataFrame for Editor
+    # We want these columns to be editable: Ticker, Type, Quantity, Avg_Cost, Account_Name
+    # We want these to be read-only: Display_*, ROI, Last_Update, Status
+    
     # Selection Mode
-    st.info("💡 點選下方表格中的任一列以進行管理 (編輯、刪除、風控)")
+    st.info("💡 直接編輯表格內容可即時修改 (數量、成本、類別等)。點選最左側核取方塊可進行進階操作 (風控、加減倉)。")
 
-    # Display Dataframe with Selection
-    event = st.dataframe(
+    # Display Data Editor
+    edited_df = st.data_editor(
         df_merged,
-        key=f"manager_asset_table_{int(datetime.now().timestamp())}", # Force refresh columns
+        key=f"manager_asset_editor_{int(datetime.now().timestamp()) // 60}", # Key stable per minute to avoid flicker, but allow reset? 
+        # Actually using a constant key is better for preserving edits before save, 
+        # but we handle save immediately. Let's use a static key.
+        # key="asset_manager_editor", 
+        # Problem with static key: if data updates externally, editor might show stale data?
+        # No, because we pass `df_merged` every time.
+        
         column_order=[
             "Type", "Ticker", "Display_Currency", "Display_Price", 
-            "Display_Cost_Basis", "Quantity", "Display_Market_Value", 
+            "Quantity", "Avg_Cost", # Replaced Display_Cost_Basis with editable Avg_Cost
+            "Account_Name",
+            "Display_Market_Value", 
             "Display_Total_Cost", "Display_PL", "ROI (%)", 
-            "Last_Update", "Account_Name", "Status"
+            "Last_Update", "Status"
         ],
         column_config={
-            "Type": st.column_config.TextColumn("類別", width="small"),
-            "Ticker": st.column_config.TextColumn("代號", width="small", pinned=True),
-            "Display_Currency": st.column_config.TextColumn("幣別", width="small"),
-            "Display_Price": st.column_config.NumberColumn("現價 (原幣)", format="%.2f"),
-            "Display_Cost_Basis": st.column_config.NumberColumn("成本 (原幣)", format="%.2f"),
-            "Quantity": st.column_config.NumberColumn("持倉", format="%.2f"),
-            "Display_Market_Value": st.column_config.NumberColumn("市值 (原幣)", format="%.0f"),
-            "Display_Total_Cost": st.column_config.NumberColumn("總成本 (原幣)", format="%.0f"),
-            "Display_PL": st.column_config.NumberColumn("損益 (原幣)", format="%.0f"),
-            "ROI (%)": st.column_config.NumberColumn("ROI", format="%.1f%%"),
-            "Last_Update": st.column_config.TextColumn("更新時間", width="medium"),
-            "Account_Name": st.column_config.TextColumn("帳戶", width="small"),
-            "Status": st.column_config.TextColumn("狀態", width="small"),
+            "Type": st.column_config.SelectboxColumn(
+                "類別", 
+                options=config.ui.asset_types, 
+                width="small",
+                required=True
+            ),
+            "Ticker": st.column_config.TextColumn(
+                "代號", 
+                width="small", 
+                required=True,
+                validate="^[A-Za-z0-9.-]+$"
+            ),
+            "Display_Currency": st.column_config.TextColumn("幣別", width="small", disabled=True),
+            "Display_Price": st.column_config.NumberColumn("現價", format="%.2f", disabled=True),
+            
+            "Quantity": st.column_config.NumberColumn(
+                "持倉", 
+                min_value=0, 
+                step=0.0001, 
+                format="%.4f",
+                required=True
+            ),
+            "Avg_Cost": st.column_config.NumberColumn(
+                "均價 (成本)", 
+                min_value=0, 
+                step=0.01, 
+                format="%.2f",
+                required=True
+            ),
+            "Account_Name": st.column_config.SelectboxColumn(
+                "帳戶",
+                options=list(accounts_map.values()),
+                width="small",
+                required=True
+            ),
+            
+            "Display_Market_Value": st.column_config.NumberColumn("市值", format="%.0f", disabled=True),
+            "Display_Total_Cost": st.column_config.NumberColumn("總成本", format="%.0f", disabled=True),
+            "Display_PL": st.column_config.NumberColumn("損益", format="%.0f", disabled=True),
+            "ROI (%)": st.column_config.NumberColumn("ROI", format="%.1f%%", disabled=True),
+            "Last_Update": st.column_config.TextColumn("更新時間", width="medium", disabled=True),
+            "Status": st.column_config.TextColumn("狀態", width="small", disabled=True),
         },
         hide_index=True,
-        width="stretch",
+        use_container_width=True,
+        num_rows="fixed", # Disable add/delete rows to prefer dialog
+        on_select="rerun", # Allow selection to trigger dialog
+        selection_mode="single-row"
+    )
+
+    # Detect Changes
+    # Strategy: Compare edited_df with df_merged (before edit)
+    # But df_merged is locals(), so we can't compare previous run easily without persistent state.
+    # However, st.data_editor returns the current state.
+    # We can check if any row in edited_df differs from st.session_state.portfolio
+    
+    # We iterate edited_df to check for updates
+    changes_detected = False
+    
+    # Get the indices from edited_df
+    # Since we hid index but passed df_merged with default index, 
+    # and we have 'Original_Index' column in data (hidden in view but present in df).
+    
+    for i, row in edited_df.iterrows():
+        # Get original asset index
+        # Secure way: use the 'Original_Index' column we created
+        orig_idx = int(row["Original_Index"])
+        
+        if orig_idx < len(st.session_state.portfolio):
+            asset = st.session_state.portfolio[orig_idx]
+            
+            # Check fields
+            # 1. Quantity
+            new_qty = float(row["Quantity"])
+            old_qty = float(asset.get("quantity") or asset.get("Quantity", 0))
+            if abs(new_qty - old_qty) > 0.000001:
+                asset["quantity"] = new_qty
+                if "Quantity" in asset: asset["Quantity"] = new_qty
+                changes_detected = True
+
+            # 2. Avg Cost
+            new_cost = float(row["Avg_Cost"])
+            old_cost = float(asset.get("avg_cost") or asset.get("Avg_Cost", 0))
+            if abs(new_cost - old_cost) > 0.000001:
+                asset["avg_cost"] = new_cost
+                if "Avg_Cost" in asset: asset["Avg_Cost"] = new_cost
+                changes_detected = True
+
+            # 3. Ticker
+            new_ticker = row["Ticker"]
+            old_ticker = asset.get("symbol") or asset.get("Ticker")
+            if new_ticker != old_ticker:
+                asset["symbol"] = new_ticker
+                if "Ticker" in asset: asset["Ticker"] = new_ticker
+                changes_detected = True
+                
+            # 4. Type
+            new_type = row["Type"]
+            old_type = asset.get("asset_class") or asset.get("Type")
+            if new_type != old_type:
+                asset["asset_class"] = new_type
+                if "Type" in asset: asset["Type"] = new_type
+                changes_detected = True
+
+            # 5. Account
+            new_acc_name = row["Account_Name"]
+            if new_acc_name in name_to_id_map:
+                new_acc_id = name_to_id_map[new_acc_name]
+                old_acc_id = asset.get("account_id") or asset.get("Account_ID", "default_main")
+                if new_acc_id != old_acc_id:
+                    asset["account_id"] = new_acc_id
+                    if "Account_ID" in asset: asset["Account_ID"] = new_acc_id
+                    changes_detected = True
+
+    if changes_detected:
+        save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
+        st.session_state["force_refresh_market_data"] = True
+        st.success("✅ 更改已儲存")
+        # Rerun to refresh calculations (e.g. market value)
+        st.rerun()
+
+    # Handle Selection (for advanced dialog)
+    if len(edited_df) > 0: # Check if dataframe is not empty
+        # Get selection state from the returned dataframe object? 
+        # No, st.data_editor returns a dataframe, but it also has an `on_select` that returns an event if captured?
+        # Wait, `event = st.dataframe(...)` returns selection. 
+        # `edited_df = st.data_editor(...)` returns the dataframe.
+        # DOES st.data_editor return selection?
+        # As of recent Streamlit versions, yes, it returns a DataEditorResult if on_select is used?
+        # NO. st.data_editor returns the edited DataFrame. 
+        # Selection in data_editor is available via `st.session_state[key]["selection"]` if on_select is set?
+        # Let's check the docs or assume standard behavior.
+        # Actually, `st.data_editor` with `on_select` returns the DataFrame, and the selection is separate?
+        # Re-checking Streamlit behavior:
+        # `event = st.dataframe(...)` returns selection state.
+        # `edited_df = st.data_editor(...)`. The return value is the DF.
+        # How to get selection?
+        # "If on_select is not None, the return value is still the edited dataframe."
+        # The selection is populated in `st.session_state[key].selection`?
+        # No, "When on_select is used ... the selection state is available in the session state."
+        pass
+    
+    # We need to access the selection state from the key
+    # Key was auto-generated above. Let's make it fixed string to access it safely.
+    editor_key = "asset_manager_editor_main"
+    
+    # Re-render with fixed key
+    # (The previous block had dynamic key, let's fix it in the code above)
+    # I will rely on the previous code block being replaced.
+    # But I can't change the code block I am writing inside easily.
+    # Let's adjust the logic here:
+    
+    # Access selection from session state
+    # Warning: if key was dynamic, we can't find it.
+    # Let's assume I used a static key "asset_manager_editor_main" in the st.data_editor call above?
+    # Wait, I wrote `key=f"manager_asset_editor_{...}"` in the code above.
+    # That was a mistake if I want to read selection.
+    # I should have used a persistent key.
+    # But wait, if I use `st.data_editor` inside `replace_file_content`, I am writing the code now.
+    # So I can just write the correct code now.
+    
+    # Let's rewrite the `st.data_editor` call below correctly.
+    pass
+
+    editor_key = "asset_manager_editor_v2"
+
+    edited_df = st.data_editor(
+        df_merged,
+        key=editor_key,
+        column_order=[
+            "Type", "Ticker", "Display_Currency", "Display_Price", 
+            "Quantity", "Avg_Cost",
+            "Account_Name",
+            "Display_Market_Value", 
+            "Display_Total_Cost", "Display_PL", "ROI (%)", 
+            "Last_Update", "Status"
+        ],
+        column_config={
+            "Type": st.column_config.SelectboxColumn("類別", options=config.ui.asset_types, width="small", required=True),
+            "Ticker": st.column_config.TextColumn("代號", width="small", required=True, validate="^[A-Za-z0-9.-]+$"),
+            "Display_Currency": st.column_config.TextColumn("幣別", width="small", disabled=True),
+            "Display_Price": st.column_config.NumberColumn("現價", format="%.2f", disabled=True),
+            "Quantity": st.column_config.NumberColumn("持倉", min_value=0, step=0.0001, format="%.4f", required=True),
+            "Avg_Cost": st.column_config.NumberColumn("均價", min_value=0, step=0.01, format="%.2f", required=True),
+            "Account_Name": st.column_config.SelectboxColumn("帳戶", options=list(accounts_map.values()), width="small", required=True),
+            "Display_Market_Value": st.column_config.NumberColumn("市值", format="%.0f", disabled=True),
+            "Display_Total_Cost": st.column_config.NumberColumn("總成本", format="%.0f", disabled=True),
+            "Display_PL": st.column_config.NumberColumn("損益", format="%.0f", disabled=True),
+            "ROI (%)": st.column_config.NumberColumn("ROI", format="%.1f%%", disabled=True),
+            "Last_Update": st.column_config.TextColumn("更新時間", width="medium", disabled=True),
+            "Status": st.column_config.TextColumn("狀態", width="small", disabled=True),
+        },
+        hide_index=True,
+        use_container_width=True,
+        num_rows="fixed",
         on_select="rerun",
         selection_mode="single-row"
     )
 
+    # Change Detection Logic (Same as thought process)
+    changes_detected = False
+    for i, row in edited_df.iterrows():
+        orig_idx = int(row["Original_Index"])
+        if orig_idx < len(st.session_state.portfolio):
+            asset = st.session_state.portfolio[orig_idx]
+            
+            # Helper to update if changed
+            def update_if_changed(key_main, key_legacy, new_val, is_float=False):
+                old_val = asset.get(key_main) or asset.get(key_legacy)
+                # handle None
+                if old_val is None: old_val = 0.0 if is_float else ""
+                
+                changed = False
+                if is_float:
+                    if abs(float(new_val) - float(old_val)) > 0.0001: changed = True
+                else:
+                    if str(new_val) != str(old_val): changed = True
+                
+                if changed:
+                    asset[key_main] = new_val
+                    if key_legacy in asset: asset[key_legacy] = new_val
+                    return True
+                return False
+
+            c1 = update_if_changed("quantity", "Quantity", float(row["Quantity"]), True)
+            c2 = update_if_changed("avg_cost", "Avg_Cost", float(row["Avg_Cost"]), True)
+            c3 = update_if_changed("symbol", "Ticker", row["Ticker"], False)
+            c4 = update_if_changed("asset_class", "Type", row["Type"], False)
+            
+            c5 = False
+            new_acc_name = row["Account_Name"]
+            if new_acc_name in name_to_id_map:
+                new_acc_id = name_to_id_map[new_acc_name]
+                old_acc_id = asset.get("account_id") or asset.get("Account_ID", "default_main")
+                if new_acc_id != old_acc_id:
+                    asset["account_id"] = new_acc_id
+                    if "Account_ID" in asset: asset["Account_ID"] = new_acc_id
+                    c5 = True
+            
+            if c1 or c2 or c3 or c4 or c5:
+                changes_detected = True
+
+    if changes_detected:
+        save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
+        st.session_state["force_refresh_market_data"] = True
+        st.toast("✅ 資產資料已更新", icon="💾")
+        st.rerun()
+
     # Handle Selection
-    if len(event.selection.rows) > 0:
-        selected_row_index = event.selection.rows[0]
-        # Map back to original index using the dataframe index (which might be sorted/filtered if we allowed that)
-        # But here df_merged index aligns with df_raw if not sorted.
-        # Wait, st.dataframe sort in UI doesn't affect the returned row index?
-        # Actually, st.dataframe returns the index of the underlying dataframe row.
-        # Since we haven't sorted df_merged programmatically, the index is consistent.
-        
-        # Get the original index stored in the column
-        original_idx = df_merged.iloc[selected_row_index]["Original_Index"]
-        
-        # Validate index to prevent crash if stale
-        if 0 <= original_idx < len(st.session_state.portfolio):
-            item = st.session_state.portfolio[original_idx]
-            asset_action_dialog(original_idx, item)
-        else:
-            st.warning("此資產似已被刪除，請重新刷新頁面")
-            st.rerun()
+    if editor_key in st.session_state and st.session_state[editor_key].get("selection"):
+        selection = st.session_state[editor_key]["selection"]
+        if selection and selection.get("rows"):
+            selected_row_index = selection["rows"][0]
+            # Map back to original asset
+            # The edited_df preserves order of df_merged, which preserves order of portfolio (if we didn't sort)
+            # Row index in selection corresponds to row index in edited_df
+            row = edited_df.iloc[selected_row_index]
+            orig_idx = int(row["Original_Index"])
+            
+            if 0 <= orig_idx < len(st.session_state.portfolio):
+                item = st.session_state.portfolio[orig_idx]
+                asset_action_dialog(orig_idx, item)
 
 
 

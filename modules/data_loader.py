@@ -27,6 +27,7 @@ from models import Asset, AllocationSettings, Account, HistoryRecord
 from config import get_config
 
 logger = get_logger(__name__)
+logger.info("Initializing data_loader module (Reloaded)")
 config = get_config()
 
 # Configuration Constants

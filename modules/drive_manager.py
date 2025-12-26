@@ -21,6 +21,7 @@ from modules.exceptions import AuthenticationError, DriveServiceError
 from config import get_config
 
 logger = get_logger(__name__)
+logger.info("Initializing drive_manager module (Reloaded)")
 config = get_config()
 
 
