@@ -47,6 +47,9 @@ st.set_page_config(
 # Initialize session state (no UI output)
 state.initialize()
 
+# Initialize Cookie Manager
+cookie_manager = stx.CookieManager()
+
 # ==========================================
 # Authentication Flow
 # ==========================================
@@ -318,8 +321,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize Cookie Manager
-cookie_manager = stx.CookieManager()
+
 
 # ==========================================
 # Main Application Logic
