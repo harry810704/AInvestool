@@ -45,6 +45,58 @@ st.set_page_config(
 
 logger.info("Application started")
 
+# Inject Global Custom CSS
+st.markdown("""
+<style>
+    /* Card Styling */
+    div[data-testid="stMetric"], div.css-card {
+        background-color: #ffffff;
+        border: 1px solid #e0e0e0;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        transition: all 0.3s ease;
+    }
+    div[data-testid="stMetric"]:hover, div.css-card:hover {
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    }
+
+    /* Table Styling */
+    div[data-testid="stDataFrame"] {
+        border: 1px solid #f0f2f6;
+        border-radius: 10px;
+        padding: 5px;
+    }
+
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 20px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: transparent;
+        border-radius: 5px 5px 0 0;
+        font-size: 16px;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #f0f2f6;
+        border-bottom: 2px solid #5D69B1;
+    }
+
+    /* Button Styling */
+    button[kind="primary"] {
+        background-color: #5D69B1;
+        border-color: #5D69B1;
+    }
+    button[kind="primary"]:hover {
+        background-color: #4A569D;
+        border-color: #4A569D;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Initialize Cookie Manager
 cookie_manager = stx.CookieManager()
 
@@ -204,17 +256,38 @@ state.initialize()
 # Load portfolio data
 if not state.load_portfolio and not state.portfolio:
     if config.dev_mode:
-        # In dev mode, use local CSV file
-        logger.info("DEV_MODE: Loading portfolio from local CSV file")
+        # In dev mode, check Excel first then CSV
+        logger.info("DEV_MODE: Loading portfolio from local file")
         import os
-        local_portfolio_path = "my_portfolio.csv"
         
-        if os.path.exists(local_portfolio_path):
-            import pandas as pd
-            df = pd.read_csv(local_portfolio_path)
-            portfolio = df.to_dict('records')
-            logger.info(f"Loaded {len(portfolio)} assets from local file")
-        else:
+        # We should really use data_loader logic even in dev mode to ensure consistency
+        # But data_loader.load_portfolio is tied to Google Drive Service
+        # For now, let's replicate the logic locally or patch it
+
+        portfolio = []
+        loaded = False
+
+        # Try Excel
+        if os.path.exists(config.google_drive.portfolio_filename):
+            try:
+                df = pd.read_excel(config.google_drive.portfolio_filename)
+                portfolio = df.to_dict('records')
+                loaded = True
+                logger.info(f"Loaded {len(portfolio)} assets from local Excel")
+            except Exception as e:
+                logger.error(f"Failed to load local Excel: {e}")
+
+        # Try Legacy CSV if not loaded
+        if not loaded and os.path.exists(config.google_drive.legacy_portfolio_filename):
+            try:
+                df = pd.read_csv(config.google_drive.legacy_portfolio_filename)
+                portfolio = df.to_dict('records')
+                loaded = True
+                logger.info(f"Loaded {len(portfolio)} assets from local CSV")
+            except Exception as e:
+                logger.error(f"Failed to load local CSV: {e}")
+
+        if not loaded:
             logger.info("No local portfolio found, creating default")
             portfolio = [{
                 "Type": "美股",
@@ -226,9 +299,24 @@ if not state.load_portfolio and not state.portfolio:
                 "Last_Update": "N/A",
             }]
         
+        # Normalize keys/data (important for dev mode to match prod behavior)
+        # This handles missing Account_ID etc.
+        from models import Asset
+        normalized_portfolio = []
+        for item in portfolio:
+            try:
+                asset = Asset.from_dict(item)
+                if not asset.account_id:
+                    asset.account_id = "default_main"
+                normalized_portfolio.append(asset.to_dict())
+            except Exception as e:
+                logger.warning(f"Skipping invalid asset in dev mode: {e}")
+
+        state.portfolio = normalized_portfolio
+
         # Load allocation settings from local file or use defaults
         state.allocation_targets = config.allocation.targets.copy()
-        state.portfolio = portfolio
+
         # Load local accounts if possible, else default
         st.session_state.accounts = load_accounts() # data_loader handles local fallback
     else:
