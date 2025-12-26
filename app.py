@@ -85,7 +85,7 @@ with st.sidebar:
         st.caption("開發模式下無需登出")
 
 # Auto-update portfolio prices
-if state.portfolio and not state.has_auto_updated:
+if state.portfolio and not state.has_auto_updated: # Changed from 'portfolio' in st.session_state and "has_auto_updated" not in st.session_state
     logger.info("Starting automatic portfolio update")
     with st.status("🔄 正在檢查並更新資產價格...", expanded=True) as status:
         success, fail, updated_portfolio = auto_update_portfolio(state.portfolio)
@@ -96,6 +96,26 @@ if state.portfolio and not state.has_auto_updated:
             save_all_data(state.accounts, state.portfolio, state.allocation_targets, state.history_data)
             st.session_state["force_refresh_market_data"] = True
             logger.info(f"Portfolio updated: {success} success, {fail} failed")
+        
+        if fail > 0:
+            st.status.update(
+                label=f"更新完成: {success} 成功, {fail} 失敗",
+                state="error",
+                expanded=False,
+            )
+        elif success > 0:
+            st.status.update(
+                label=f"更新完成: {success} 筆資產已同步",
+                state="complete",
+                expanded=False,
+            )
+        else:
+            st.status.update(
+                label="資產價格皆為最新",
+                state="complete",
+                expanded=False
+            )
+    state.has_auto_updated = True
 
 logger.info("Application started")
 
@@ -428,57 +448,6 @@ if not state.load_portfolio and not state.portfolio:
     state.load_portfolio = True
     # Force market data refresh when portfolio is loaded
     st.session_state["force_refresh_market_data"] = True
-
-# Sidebar
-with st.sidebar:
-    if config.dev_mode:
-        st.warning("🔧 DEV MODE")
-        st.caption("開發模式：使用本地檔案")
-    else:
-        st.success("已連線 ✅")
-    
-    # Display user info
-    if state.user_info:
-        st.markdown(f"**👤 {state.user_info.get('name', 'User')}**")
-        st.caption(state.user_info.get('email', ''))
-    
-    if not config.dev_mode:
-        if st.button("🚪 登出", use_container_width=True):
-            handle_logout()
-    else:
-        st.caption("開發模式下無需登出")
-
-# Auto-update portfolio prices
-if state.portfolio and not state.has_auto_updated: # Changed from 'portfolio' in st.session_state and "has_auto_updated" not in st.session_state
-    logger.info("Starting automatic portfolio update")
-    with st.status("🔄 正在檢查並更新資產價格...", expanded=True) as status:
-        success, fail, updated_portfolio = auto_update_portfolio(state.portfolio)
-        state.portfolio = updated_portfolio
-        
-        if success > 0:
-            save_portfolio(state.portfolio)
-            st.session_state["force_refresh_market_data"] = True
-            logger.info(f"Portfolio updated: {success} success, {fail} failed")
-        
-        if fail > 0:
-            status.update(
-                label=f"更新完成: {success} 成功, {fail} 失敗",
-                state="error",
-                expanded=False,
-            )
-        elif success > 0:
-            status.update(
-                label=f"更新完成: {success} 筆資產已同步",
-                state="complete",
-                expanded=False,
-            )
-        else:
-            status.update(
-                label="資產價格皆為最新",
-                state="complete",
-                expanded=False
-            )
-    state.has_auto_updated = True
 
 # Main UI
 current_usd_twd = get_exchange_rate()
