@@ -31,8 +31,6 @@ env/
 .virtualenv/
 
 # Streamlit
-.streamlit/secrets.toml
-.streamlit/config.toml
 
 # Environment Variables
 .env
