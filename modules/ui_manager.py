@@ -926,23 +926,37 @@ def render_asset_list_section(df_market_data, c_symbol):
     if "asset_class" in df_raw.columns and "Type" not in df_raw.columns:
         df_raw["Type"] = df_raw["asset_class"]
 
+    # Normalize Quantity/Avg_Cost to Title Case (Original Values) BEFORE merge
+    if "quantity" in df_raw.columns and "Quantity" not in df_raw.columns:
+         df_raw["Quantity"] = df_raw["quantity"]
+    if "Quantity" not in df_raw.columns:
+         df_raw["Quantity"] = 0.0
+
+    if "avg_cost" in df_raw.columns and "Avg_Cost" not in df_raw.columns:
+         df_raw["Avg_Cost"] = df_raw["avg_cost"]
+    if "Avg_Cost" not in df_raw.columns:
+         df_raw["Avg_Cost"] = 0.0
+
     if not df_market_data.empty:
         # Select only columns that exist in df_market_data
         merge_cols = [
-            "Ticker", "Market_Value", "Avg_Cost", 
+            "Ticker", "Market_Value",
             "Current_Price", "Last_Update", "ROI (%)", "Status",
             "Display_Price", "Display_Cost_Basis", "Display_Market_Value", 
             "Display_Total_Cost", "Display_PL", "Display_Currency"
         ]
+        # Avg_Cost excluded from merge to avoid overwriting original cost with converted cost
+        
         merge_cols = [c for c in merge_cols if c in df_market_data.columns]
         
         df_merged = pd.merge(
             df_raw, df_market_data[merge_cols], on="Ticker", how="left"
         )
         
-        # Use converted Avg_Cost from market data if available
-        if "Avg_Cost_y" in df_merged.columns:
-            df_merged["Avg_Cost"] = df_merged["Avg_Cost_y"].fillna(df_merged["Avg_Cost_x"])
+        # Do NOT overwrite Avg_Cost with market data version
+        if "Avg_Cost" not in df_merged.columns:
+             # Should be present from df_raw, but if lost in merge (unlikely with left join)
+             df_merged["Avg_Cost"] = 0.0
 
         df_merged["Market_Value"] = df_merged["Market_Value"].fillna(0)
         
@@ -983,17 +997,6 @@ def render_asset_list_section(df_market_data, c_symbol):
     # Create editable columns
     df_merged["Account_Name"] = df_merged["Account_ID"].map(lambda x: accounts_map.get(x, "未知"))
     
-    # Normalize Quantity/Avg_Cost to Title Case if needed for Editor consistency
-    if "quantity" in df_merged.columns and "Quantity" not in df_merged.columns:
-         df_merged["Quantity"] = df_merged["quantity"]
-    if "Quantity" not in df_merged.columns:
-         df_merged["Quantity"] = 0.0
-
-    if "avg_cost" in df_merged.columns and "Avg_Cost" not in df_merged.columns:
-         df_merged["Avg_Cost"] = df_merged["avg_cost"]
-    if "Avg_Cost" not in df_merged.columns:
-         df_merged["Avg_Cost"] = 0.0
-
     # Add Selection Column
     df_merged["Select"] = False
     
@@ -1001,7 +1004,7 @@ def render_asset_list_section(df_market_data, c_symbol):
     st.info("💡 直接編輯表格內容可即時修改 (數量、成本、類別等)。勾選 [選擇] 欄位可進行進階操作 (風控、加減倉)。")
 
     # Use a static key to prevent reloading on typing, but we need to handle the state.
-    editor_key = "asset_manager_editor_v2"
+    editor_key = "asset_manager_editor_v2_fixed"
 
     edited_df = st.data_editor(
         df_merged,
@@ -1035,10 +1038,9 @@ def render_asset_list_section(df_market_data, c_symbol):
         num_rows="fixed",
     )
 
-    # Change Detection Logic (Same as thought process)
+    # Change Detection Logic
     changes_detected = False
-    selected_item = None
-    selected_idx = -1
+    selected_items = []
 
     for i, row in edited_df.iterrows():
         orig_idx = int(row["Original_Index"])
@@ -1047,9 +1049,7 @@ def render_asset_list_section(df_market_data, c_symbol):
             
             # Check for Selection
             if row["Select"]:
-                selected_item = asset
-                selected_idx = orig_idx
-                # We don't break here to allow saving other edits if any
+                selected_items.append((orig_idx, asset))
             
             # Helper to update if changed
             def update_if_changed(key_main, key_legacy, new_val, is_float=False):
@@ -1093,9 +1093,20 @@ def render_asset_list_section(df_market_data, c_symbol):
         st.toast("✅ 資產資料已更新", icon="💾")
         st.rerun()
 
-    # Handle Selection
-    if selected_item and selected_idx != -1:
-         asset_action_dialog(selected_idx, selected_item)
+    # Handle Selection via specific button to avoid infinite loop
+    # We only show the button if something is selected
+    if selected_items:
+        # If multiple selected, just take the first one or show warning?
+        # Let's take the first one for simplicity as dialogs are single-item focus usually
+        idx, item = selected_items[0]
+        
+        # Use a container to make it look integrated
+        st.markdown(f"**已選擇:** `{item.get('symbol', 'Unknown')}`")
+        if st.button("🛠️ 管理此資產 (買/賣/風控)", type="primary", key="btn_open_manage_dialog"):
+            asset_action_dialog(idx, item)
+            
+        if len(selected_items) > 1:
+            st.caption("⚠️ 偵測到多選，僅開啟第一項。")
 
 
 
