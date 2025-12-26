@@ -43,9 +43,156 @@ st.set_page_config(
     page_icon=config.ui.page_icon
 )
 
+# State and Authentication must be handled BEFORE data loading
 # Initialize session state (no UI output)
 state.initialize()
 
+# ==========================================
+# Authentication Flow
+# ==========================================
+
+def restore_session_from_cookie() -> None:
+    """Attempt to restore session from encrypted cookie."""
+    if state.is_authenticated:
+        return
+    
+    encrypted_cookie = cookie_manager.get(cookie=config.security.cookie_name)
+    
+    if encrypted_cookie:
+        logger.debug("Found encrypted cookie, attempting to restore session")
+        token_dict = decrypt_token_data(encrypted_cookie)
+        
+        if token_dict:
+            creds, was_refreshed = credentials_from_dict(token_dict)
+            
+            if creds:
+                state.google_creds = creds
+                logger.info("Session restored from cookie")
+                
+                # Get user info
+                user_info = get_user_info(creds)
+                if user_info:
+                    state.user_info = user_info
+                
+                # Update cookie if token was refreshed
+                if was_refreshed:
+                    logger.info("Token was refreshed, updating cookie")
+                    new_encrypted = encrypt_token_data(credentials_to_dict(creds))
+                    cookie_manager.set(
+                        config.security.cookie_name,
+                        new_encrypted,
+                        key="refresh_set",
+                        expires_at=datetime.now() + timedelta(days=config.security.cookie_expiry_days),
+                    )
+            else:
+                logger.warning("Invalid credentials in cookie, deleting")
+                cookie_manager.delete(config.security.cookie_name)
+        else:
+            logger.warning("Failed to decrypt cookie, deleting")
+            cookie_manager.delete(config.security.cookie_name)
+
+
+def handle_oauth_callback() -> None:
+    """Handle OAuth callback with authorization code."""
+    if "code" not in st.query_params:
+        return
+    
+    # Get the code and clear it immediately to prevent reuse
+    code = st.query_params["code"]
+    st.query_params.clear()
+    
+    logger.info("Processing OAuth callback")
+    
+    creds = exchange_code_for_token(code)
+    if creds:
+        state.google_creds = creds
+        logger.info("OAuth authentication successful")
+        
+        # Get user info
+        user_info = get_user_info(creds)
+        if user_info:
+            state.user_info = user_info
+            logger.info(f"User info retrieved: {user_info['email']}")
+        else:
+            logger.warning("Could not retrieve user info, but authentication succeeded")
+        
+        # Encrypt and store in cookie
+        token_dict = credentials_to_dict(creds)
+        encrypted_token = encrypt_token_data(token_dict)
+        
+        if encrypted_token:
+            cookie_manager.set(
+                config.security.cookie_name,
+                encrypted_token,
+                key="login_set",
+                expires_at=datetime.now() + timedelta(days=config.security.cookie_expiry_days),
+            )
+            logger.info("Credentials saved to encrypted cookie")
+        
+        st.rerun()
+    else:
+        logger.error("OAuth authentication failed")
+        st.error("認證失敗，請重試")
+
+
+def render_login_page() -> None:
+    """Render the login page."""
+    st.title(f"☁️ {config.ui.page_title}")
+    st.write("請先登入 Google 帳號以讀取您的投資組合。")
+    
+    login_url = get_login_url()
+    st.link_button("🔑 使用 Google 帳號登入", login_url, type="primary")
+    
+    st.divider()
+    st.caption(
+        f"🔒 安全提示：您的登入憑證將經過 AES-128 加密後儲存於瀏覽器 Cookie 中，"
+        f"有效期 {config.security.cookie_expiry_days} 天。"
+    )
+
+
+def handle_logout() -> None:
+    """Handle user logout."""
+    logger.info("User logging out")
+    
+    # Delete the encrypted cookie
+    cookie_manager.delete(config.security.cookie_name)
+    
+    # Clear ALL session state (not just managed keys)
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    
+    st.rerun()
+
+# Restore session from cookie if available (skip in dev mode)
+if not config.dev_mode:
+    restore_session_from_cookie()
+
+# Handle OAuth callback (skip in dev mode)
+if not config.dev_mode:
+    handle_oauth_callback()
+
+# Check authentication (allow dev mode to bypass)
+if not config.dev_mode and not state.is_authenticated:
+    render_login_page()
+    st.stop()
+    
+# Dev mode authentication bypass
+if config.dev_mode and not state.is_authenticated:
+    logger.warning("DEV_MODE enabled - bypassing authentication with fake user")
+    # Set fake credentials for dev mode
+    state.user_info = {
+        'email': 'dev_user@localhost',
+        'name': 'Dev User',
+        'picture': '',
+        'sub': 'dev_user_id'
+    }
+    logger.info("Dev mode user set")
+
+logger.debug("User authenticated or in dev mode, loading application")
+
+# ==========================================
+# Data Loading (After Auth)
+# ==========================================
 # Load ALL data (Portfolio, Accounts, Settings, History)
 if not state.load_portfolio:
     if config.dev_mode:
@@ -175,157 +322,10 @@ st.markdown("""
 cookie_manager = stx.CookieManager()
 
 # ==========================================
-# Authentication Flow
-# ==========================================
-
-def restore_session_from_cookie() -> None:
-    """Attempt to restore session from encrypted cookie."""
-    if state.is_authenticated:
-        return
-    
-    encrypted_cookie = cookie_manager.get(cookie=config.security.cookie_name)
-    
-    if encrypted_cookie:
-        logger.debug("Found encrypted cookie, attempting to restore session")
-        token_dict = decrypt_token_data(encrypted_cookie)
-        
-        if token_dict:
-            creds, was_refreshed = credentials_from_dict(token_dict)
-            
-            if creds:
-                state.google_creds = creds
-                logger.info("Session restored from cookie")
-                
-                # Get user info
-                user_info = get_user_info(creds)
-                if user_info:
-                    state.user_info = user_info
-                
-                # Update cookie if token was refreshed
-                if was_refreshed:
-                    logger.info("Token was refreshed, updating cookie")
-                    new_encrypted = encrypt_token_data(credentials_to_dict(creds))
-                    cookie_manager.set(
-                        config.security.cookie_name,
-                        new_encrypted,
-                        key="refresh_set",
-                        expires_at=datetime.now() + timedelta(days=config.security.cookie_expiry_days),
-                    )
-            else:
-                logger.warning("Invalid credentials in cookie, deleting")
-                cookie_manager.delete(config.security.cookie_name)
-        else:
-            logger.warning("Failed to decrypt cookie, deleting")
-            cookie_manager.delete(config.security.cookie_name)
-
-
-def handle_oauth_callback() -> None:
-    """Handle OAuth callback with authorization code."""
-    if "code" not in st.query_params:
-        return
-    
-    # Get the code and clear it immediately to prevent reuse
-    code = st.query_params["code"]
-    st.query_params.clear()
-    
-    logger.info("Processing OAuth callback")
-    
-    creds = exchange_code_for_token(code)
-    if creds:
-        state.google_creds = creds
-        logger.info("OAuth authentication successful")
-        
-        # Get user info
-        user_info = get_user_info(creds)
-        if user_info:
-            state.user_info = user_info
-            logger.info(f"User info retrieved: {user_info['email']}")
-        else:
-            logger.warning("Could not retrieve user info, but authentication succeeded")
-        
-        # Encrypt and store in cookie
-        token_dict = credentials_to_dict(creds)
-        encrypted_token = encrypt_token_data(token_dict)
-        
-        if encrypted_token:
-            cookie_manager.set(
-                config.security.cookie_name,
-                encrypted_token,
-                key="login_set",
-                expires_at=datetime.now() + timedelta(days=config.security.cookie_expiry_days),
-            )
-            logger.info("Credentials saved to encrypted cookie")
-        
-        st.rerun()
-    else:
-        logger.error("OAuth authentication failed")
-        st.error("認證失敗，請重試")
-
-
-def render_login_page() -> None:
-    """Render the login page."""
-    st.title(f"☁️ {config.ui.page_title}")
-    st.write("請先登入 Google 帳號以讀取您的投資組合。")
-    
-    login_url = get_login_url()
-    st.link_button("🔑 使用 Google 帳號登入", login_url, type="primary")
-    
-    st.divider()
-    st.caption(
-        f"🔒 安全提示：您的登入憑證將經過 AES-128 加密後儲存於瀏覽器 Cookie 中，"
-        f"有效期 {config.security.cookie_expiry_days} 天。"
-    )
-
-
-def handle_logout() -> None:
-    """Handle user logout."""
-    logger.info("User logging out")
-    
-    # Delete the encrypted cookie
-    cookie_manager.delete(config.security.cookie_name)
-    
-    # Clear ALL session state (not just managed keys)
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
-    
-    st.rerun()
-
-
-# ==========================================
 # Main Application Logic
 # ==========================================
 
-# Dev mode authentication bypass
-if config.dev_mode and not state.is_authenticated:
-    logger.warning("DEV_MODE enabled - bypassing authentication with fake user")
-    # Set fake credentials for dev mode
-    state.user_info = {
-        'email': 'dev_user@localhost',
-        'name': 'Dev User',
-        'picture': '',
-        'sub': 'dev_user_id'
-    }
-    # We don't set google_creds in dev mode, so is_authenticated will be False
-    # Instead, we'll check for dev_mode separately
-    logger.info("Dev mode user set")
 
-# Restore session from cookie if available (skip in dev mode)
-if not config.dev_mode:
-    restore_session_from_cookie()
-
-# Handle OAuth callback (skip in dev mode)
-if not config.dev_mode:
-    handle_oauth_callback()
-
-# Check authentication (allow dev mode to bypass)
-if not config.dev_mode and not state.is_authenticated:
-    render_login_page()
-    st.stop()
-
-logger.debug("User authenticated or in dev mode, loading application")
-
-# Initialize session state
-state.initialize()
 
 # Load portfolio data
 if not state.load_portfolio and not state.portfolio:

@@ -16,14 +16,37 @@ from modules.logger import get_logger
 from modules.exceptions import MarketDataError
 from models import PriceUpdate, MarketData
 from config import get_config
+import time
+import functools
 
 logger = get_logger(__name__)
 config = get_config()
 
+import random
+
+def retry_with_backoff(retries=3, backoff_in_seconds=1):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            x = 0
+            while True:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if x == retries:
+                        raise e
+                    sleep = (backoff_in_seconds * 2 ** x + 
+                             random.uniform(0, 1))
+                    time.sleep(sleep)
+                    x += 1
+        return wrapper
+    return decorator
+
 # Note: yfinance now uses curl_cffi internally, no need for custom session
 
 
-@st.cache_data(ttl=config.market_data.exchange_rate_cache_ttl)
+@st.cache_data(ttl=3600)  # Increase to 1 hour
+@retry_with_backoff(retries=3, backoff_in_seconds=2)
 def get_exchange_rate() -> float:
     """
     Get USD to TWD exchange rate.
@@ -110,6 +133,7 @@ def fetch_historical_data(ticker: str, period: str = '1mo', interval: str = '1d'
         return pd.DataFrame()
 
 
+@retry_with_backoff(retries=3, backoff_in_seconds=2)
 def fetch_single_price(ticker: str) -> Tuple[bool, float, Optional[str]]:
     """
     Fetch current price for a single ticker.
