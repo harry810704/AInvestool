@@ -119,7 +119,7 @@ def asset_action_dialog(index, asset):
 
         st.info(f"預估投入金額: {curr} {add_qty * add_price:,.2f}")
 
-        if st.button("確認加倉", key=f"btn_buy_{index}", type="primary", use_container_width=True):
+        if st.button("確認加倉", key=f"btn_buy_{index}", type="primary", width="stretch"):
             if add_qty > 0:
                 old_cost = qty * avg_cost
                 new_qty = qty + add_qty
@@ -153,7 +153,7 @@ def asset_action_dialog(index, asset):
 
         # Calculate estimated realized P/L if we knew current price (omitted for simplicity or need to pass it in)
 
-        if st.button("確認減倉", key=f"btn_sell_{index}", type="primary", use_container_width=True):
+        if st.button("確認減倉", key=f"btn_sell_{index}", type="primary", width="stretch"):
             if sell_qty > 0:
                 asset["quantity"] = qty - sell_qty
                 if asset["quantity"] < 0: asset["quantity"] = 0 # Safety
@@ -194,7 +194,7 @@ def asset_action_dialog(index, asset):
 
         sel_acc_name = st.selectbox("所屬帳戶", acc_names, index=default_acc_index, key=f"acc_edit_{index}")
 
-        if st.button("保存修正", key=f"btn_fix_{index}", use_container_width=True):
+        if st.button("保存修正", key=f"btn_fix_{index}", width="stretch"):
             asset["quantity"] = fq
             asset["avg_cost"] = fc
             asset["account_id"] = acc_options[sel_acc_name]
@@ -225,7 +225,7 @@ def asset_action_dialog(index, asset):
         else:
             target_name = st.selectbox("移轉至目標帳戶", target_acc_names, key=f"move_acc_{index}")
             
-            if st.button("確認移轉", key=f"btn_move_{index}", type="primary", use_container_width=True):
+            if st.button("確認移轉", key=f"btn_move_{index}", type="primary", width="stretch"):
                 target_id = acc_options[target_name]
                 asset["account_id"] = target_id
                 if "Account_ID" in asset: asset["Account_ID"] = target_id
@@ -402,7 +402,7 @@ def add_asset_dialog():
         curr = st.selectbox("幣別", ["USD", "TWD"], index=0)
         cost = st.number_input("成本", min_value=0.0, value=100.0, step=0.01)
 
-    if st.button("確認新增", type="primary", use_container_width=True):
+    if st.button("確認新增", type="primary", width="stretch"):
         if ticker:
             # Generate new asset_id
             new_id = f"ast_{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -550,7 +550,7 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
             fig1.update_layout(
                 margin=dict(t=30, b=0, l=0, r=0), height=180, showlegend=False
             )
-            st.plotly_chart(fig1, use_container_width=True)
+            st.plotly_chart(fig1, width="stretch")
 
             # 圖 2: 預期總資產
             if not df_market_data.empty:
@@ -576,7 +576,7 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
             fig2.update_layout(
                 margin=dict(t=30, b=0, l=0, r=0), height=180, showlegend=True
             )
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width="stretch")
 
     st.divider()
 
@@ -1038,7 +1038,7 @@ def render_asset_list_section(df_market_data, c_symbol):
             "Status": st.column_config.TextColumn("狀態", width="small", disabled=True),
         },
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
         num_rows="fixed",
     )
 

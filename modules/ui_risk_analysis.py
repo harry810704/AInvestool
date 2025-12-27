@@ -241,7 +241,7 @@ def render_risk_analysis(portfolio: list, c_symbol: str):
         )
     
     # Calculate button
-    if st.button("🔍 執行分析", type="primary", use_container_width=True):
+    if st.button("🔍 執行分析", type="primary", width="stretch"):
         with st.spinner(f"正在分析 {selected_ticker}..."):
             # Get current price from manual price or avg cost
             man_price = selected_asset.get("manual_price")
@@ -348,7 +348,7 @@ def render_risk_analysis(portfolio: list, c_symbol: str):
                     tp_price=result['tp_price'],
                     avg_cost=a_cost
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
                 
                 # Additional statistics
                 with st.expander("📊 詳細統計資訊"):

@@ -230,7 +230,7 @@ with st.sidebar:
         st.caption(state.user_info.get('email', ''))
     
     if not config.dev_mode:
-        if st.button("🚪 登出", use_container_width=True):
+        if st.button("🚪 登出", width="stretch"):
             handle_logout()
     else:
         st.caption("開發模式下無需登出")

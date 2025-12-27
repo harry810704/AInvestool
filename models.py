@@ -8,6 +8,7 @@ used throughout the application.
 from datetime import datetime
 from typing import Optional, Literal
 from pydantic import BaseModel, Field, field_validator, ConfigDict
+import pandas as pd
 
 
 
