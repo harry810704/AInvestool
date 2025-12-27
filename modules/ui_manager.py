@@ -45,6 +45,8 @@ def inject_custom_css():
 # ===========================
 # 邏輯核心：再平衡計算
 # ===========================
+
+
 def calculate_base_suggestions(df_market_data, total_val, new_fund):
     """計算系統建議的原始分配"""
     if not df_market_data.empty:
@@ -85,8 +87,6 @@ def calculate_base_suggestions(df_market_data, total_val, new_fund):
 # 彈窗與操作邏輯
 # ===========================
 
-
-@st.dialog("⚙️ 資產管理與交易")
 @st.dialog("⚙️ 資產管理與交易")
 def asset_action_dialog(index, asset):
     # Map legacy keys if present (for safe migration)
@@ -907,6 +907,8 @@ def render_account_manager():
 # ===========================
 def render_asset_list_section(df_market_data, c_symbol):
     st.subheader("📋 資產清單管理")
+    if st.button("➕ 新增資產", key="btn_add_new_asset", type="primary"):
+        add_asset_dialog()
 
     if not st.session_state.portfolio:
         st.info("目前無資產。")
@@ -1127,7 +1129,3 @@ def render_manager(df_market_data, c_symbol, total_val):
     with sub_tab4:
         render_account_manager()
 
-    st.markdown('<div class="fab-container">', unsafe_allow_html=True)
-    if st.button("➕", key="fab_add"):
-        add_asset_dialog()
-    st.markdown("</div>", unsafe_allow_html=True)
