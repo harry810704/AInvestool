@@ -230,7 +230,7 @@ with st.sidebar:
         st.caption(state.user_info.get('email', ''))
     
     if not config.dev_mode:
-        if st.button("🚪 登出", width="stretch"):
+        if st.button("🚪 登出", use_container_width=True):
             handle_logout()
     else:
         st.caption("開發模式下無需登出")
@@ -503,7 +503,7 @@ else:
         logger.info("Currency changed, refetching market data")
         if state.portfolio:
             df_all = get_market_data(state.portfolio, target_curr_code, current_usd_twd)
-            total_val = df_all["Market_Value"].sum() if not df_all.empty else 0
+            total_val = df_all["Net_Value"].sum() if not df_all.empty else 0
         else:
             df_all = pd.DataFrame()
             total_val = 0

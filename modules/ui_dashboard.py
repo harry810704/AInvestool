@@ -34,7 +34,7 @@ def render_dashboard(df_all: pd.DataFrame, c_symbol: str, total_val: float, exch
     # 0. Snapshot Button
     c1, c2 = st.columns([0.8, 0.2])
     with c2:
-        if st.button("📸 儲存今日快照", width="stretch", help="儲存當前總資產快照至歷史紀錄"):
+        if st.button("📸 儲存今日快照", use_container_width=True, help="儲存當前總資產快照至歷史紀錄"):
             # Calculate breakdown
             breakdown = df_all.groupby('Type')['Market_Value'].sum().to_dict()
             
@@ -185,7 +185,7 @@ def render_rebalancing(df_all: pd.DataFrame, total_val: float, c_symbol: str) ->
             paper_bgcolor='rgba(0,0,0,0)',
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, use_container_width=True)
     
     with col2:
         st.write("**📊 建議操作**")
@@ -298,7 +298,7 @@ def render_category_overview(df_all: pd.DataFrame, total_val: float, c_symbol: s
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)',
         )
-        st.plotly_chart(fig_pie, width="stretch")
+        st.plotly_chart(fig_pie, use_container_width=True)
         
         st.markdown("**📈 類別績效比較**")
         fig_bar = px.bar(df_grouped, x='ROI', y='Type', orientation='h', color='ROI', color_continuous_scale='RdYlGn')
@@ -311,7 +311,7 @@ def render_category_overview(df_all: pd.DataFrame, total_val: float, c_symbol: s
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)',
         )
-        st.plotly_chart(fig_bar, width="stretch")
+        st.plotly_chart(fig_bar, use_container_width=True)
 
 
 def render_single_category_detail(df_all: pd.DataFrame, total_val: float, c_symbol: str, category: str) -> None:
@@ -402,14 +402,14 @@ def render_single_category_detail(df_all: pd.DataFrame, total_val: float, c_symb
         st.markdown(f"**📊 {category} 權重分佈**")
         fig_pie = px.pie(cat_df, values='Market_Value', names='Ticker', hole=0.5)
         fig_pie.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=200, legend=dict(orientation="h", yanchor="bottom", y=-0.2))
-        st.plotly_chart(fig_pie, width="stretch")
+        st.plotly_chart(fig_pie, use_container_width=True)
         
         st.markdown(f"**📈 {category} 個股排行**")
         df_sorted = cat_df.sort_values('ROI (%)', ascending=True)
         fig_bar = px.bar(df_sorted, x='ROI (%)', y='Ticker', orientation='h', color='ROI (%)', color_continuous_scale='RdYlGn', text='ROI (%)')
         fig_bar.update_layout(xaxis_title=None, yaxis_title=None, showlegend=False, height=250, margin=dict(t=0,b=0,l=0,r=0), coloraxis_showscale=False)
         fig_bar.update_traces(texttemplate='%{text:.1f}%', textposition='inside')
-        st.plotly_chart(fig_bar, width="stretch")
+        st.plotly_chart(fig_bar, use_container_width=True)
 
 def render_history_chart(history: list, c_symbol: str):
     """Render Net Worth History chart."""
@@ -450,4 +450,4 @@ def render_history_chart(history: list, c_symbol: str):
             margin=dict(l=20, r=20, t=40, b=20),
             plot_bgcolor='rgba(0,0,0,0)',
         )
-        st.plotly_chart(fig_area, width="stretch")
+        st.plotly_chart(fig_area, use_container_width=True)

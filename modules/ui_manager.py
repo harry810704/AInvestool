@@ -119,7 +119,7 @@ def asset_action_dialog(index, asset):
 
         st.info(f"預估投入金額: {curr} {add_qty * add_price:,.2f}")
 
-        if st.button("確認加倉", key=f"btn_buy_{index}", type="primary", width="stretch"):
+        if st.button("確認加倉", key=f"btn_buy_{index}", type="primary", use_container_width=True):
             if add_qty > 0:
                 old_cost = qty * avg_cost
                 new_qty = qty + add_qty
@@ -153,7 +153,7 @@ def asset_action_dialog(index, asset):
 
         # Calculate estimated realized P/L if we knew current price (omitted for simplicity or need to pass it in)
 
-        if st.button("確認減倉", key=f"btn_sell_{index}", type="primary", width="stretch"):
+        if st.button("確認減倉", key=f"btn_sell_{index}", type="primary", use_container_width=True):
             if sell_qty > 0:
                 asset["quantity"] = qty - sell_qty
                 if asset["quantity"] < 0: asset["quantity"] = 0 # Safety
@@ -194,7 +194,7 @@ def asset_action_dialog(index, asset):
 
         sel_acc_name = st.selectbox("所屬帳戶", acc_names, index=default_acc_index, key=f"acc_edit_{index}")
 
-        if st.button("保存修正", key=f"btn_fix_{index}", width="stretch"):
+        if st.button("保存修正", key=f"btn_fix_{index}", use_container_width=True):
             asset["quantity"] = fq
             asset["avg_cost"] = fc
             asset["account_id"] = acc_options[sel_acc_name]
@@ -225,7 +225,7 @@ def asset_action_dialog(index, asset):
         else:
             target_name = st.selectbox("移轉至目標帳戶", target_acc_names, key=f"move_acc_{index}")
             
-            if st.button("確認移轉", key=f"btn_move_{index}", type="primary", width="stretch"):
+            if st.button("確認移轉", key=f"btn_move_{index}", type="primary", use_container_width=True):
                 target_id = acc_options[target_name]
                 asset["account_id"] = target_id
                 if "Account_ID" in asset: asset["Account_ID"] = target_id
@@ -379,51 +379,153 @@ def asset_action_dialog(index, asset):
 
 @st.dialog("➕ 新增資產")
 def add_asset_dialog():
-    st.caption("搜尋代號 (如: TSLA, 2330)")
-    c_s, c_r = st.columns([2, 3])
-    q = c_s.text_input("搜尋", placeholder="輸入代號...")
-    sel = c_r.selectbox("結果", search_yahoo_ticker(q) if q else [])
-    st.markdown("---")
+    st.caption("新增資產或負債項目")
     
-    # Pre-fetch accounts
-    accounts = st.session_state.get("accounts", [])
-    acc_options = {acc["name"]: str(acc.get("account_id") or acc.get("id")) for acc in accounts} if accounts else {"主要帳戶": "default_main"}
-    
-    c1, c2 = st.columns(2)
-    auto_t = sel.split(" | ")[0] if sel else ""
-    with c1:
-        ticker = st.text_input("代號", value=auto_t).upper()
-        atype = st.selectbox("類別", config.ui.asset_types) # Use config types
-        sel_acc_name = st.selectbox("帳戶", list(acc_options.keys()))
+    # 1. Select Type First
+    c_type, c_acc = st.columns(2)
+    with c_type:
+        atype = st.selectbox("資產類別", config.ui.asset_types)
+    with c_acc:
+        # Pre-fetch accounts
+        accounts = st.session_state.get("accounts", [])
+        acc_options = {acc["name"]: str(acc.get("account_id") or acc.get("id")) for acc in accounts} if accounts else {"主要帳戶": "default_main"}
+        sel_acc_name = st.selectbox("所屬帳戶", list(acc_options.keys()))
         sel_acc_id = acc_options[sel_acc_name]
-        
-    with c2:
-        qty = st.number_input("數量", min_value=0.0, value=1.0, step=1.0, format="%.0f")
-        curr = st.selectbox("幣別", ["USD", "TWD"], index=0)
-        cost = st.number_input("成本", min_value=0.0, value=100.0, step=0.01)
 
-    if st.button("確認新增", type="primary", width="stretch"):
-        if ticker:
-            # Generate new asset_id
-            new_id = f"ast_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    # 2. Logic Split based on Type
+    is_financial = atype in ["現金", "負債"]
+    ticker = ""
+    
+    if is_financial:
+        # Flow for Cash/Liability
+        c_name, c_curr = st.columns([2, 1])
+        with c_name:
+            custom_name = st.text_input("項目名稱 (選填)", placeholder="例如：房貸、定存")
+        with c_curr:
+            curr = st.selectbox("幣別", ["USD", "TWD"], index=1) # Default TWD for local stuff usually
             
-            st.session_state.portfolio.append(
-                {
-                    "asset_id": new_id,
-                    "asset_class": atype,
-                    "symbol": ticker,
-                    "quantity": qty,
-                    "avg_cost": cost,
-                    "currency": curr,
-                    "manual_price": 0.0,
-                    "last_update": "N/A",
-                    "account_id": sel_acc_id,
-                }
+        c_amt, c_ph = st.columns([2, 1])
+        amount = c_amt.number_input("金額/餘額", min_value=0.0, value=0.0, step=1000.0)
+        
+        # Loan Plan Option for Liabilities
+        create_plan = False
+        plan_rate = 0.0
+        plan_years = 0
+        plan_start = datetime.now().date()
+        
+        if atype == "負債":
+            st.markdown("---")
+            create_plan = st.toggle("規劃還款計劃?", value=False)
+            
+            if create_plan:
+                with st.container(border=True):
+                    st.caption("還款計劃設定 (本息攤還試算)")
+                    lp1, lp2, lp3 = st.columns(3)
+                    plan_rate = lp1.number_input("年利率 (%)", min_value=0.0, value=2.0, step=0.1)
+                    plan_years = lp2.number_input("還款年限", min_value=1, value=20, step=1)
+                    plan_start = lp3.date_input("開始日期", value=datetime.now())
+                    
+                    if st.button("📊 試算還款表", key="btn_calc_plan"):
+                        from modules.loan_service import calculate_amortization_schedule
+                        schedule = calculate_amortization_schedule(amount, plan_rate, plan_years * 12, str(plan_start))
+                        if schedule:
+                            first_pmt = schedule[0].payment_amount
+                            total_interest = sum(item.interest_paid for item in schedule)
+                            st.info(f"首期還款: {first_pmt:,.0f} | 總利息: {total_interest:,.0f}")
+                            
+                            # Simple chart
+                            df_sch = pd.DataFrame([s.to_dict() for s in schedule])
+                            st.line_chart(df_sch, x="payment_number", y="remaining_balance", height=200)
+    else:
+        # Flow for Investment Assets (Stocks, Crypto, etc.)
+        st.markdown("---")
+        c_s, c_r = st.columns([2, 3])
+        q = c_s.text_input("搜尋代號", placeholder="輸入如: TSLA, 2330...")
+        sel_search = c_r.selectbox("搜尋結果", search_yahoo_ticker(q) if q else [])
+        
+        auto_t = sel_search.split(" | ")[0] if sel_search else ""
+        
+        c1, c2, c3 = st.columns(3)
+        ticker = c1.text_input("代號", value=auto_t).upper()
+        curr = c2.selectbox("幣別", ["USD", "TWD"], index=0)
+        qty = c3.number_input("持有數量", min_value=0.0, value=1.0, step=0.1)
+        
+        cost = st.number_input("平均成本 (單價)", min_value=0.0, value=100.0, step=0.1)
+        amount = 0 # Not used directly, derived from cost * qty
+
+    st.markdown("---")
+    if st.button("確認新增", type="primary", use_container_width=True):
+        # Validation
+        if not is_financial and not ticker:
+            st.error("請輸入代號")
+            return
+            
+        new_id = f"ast_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        
+        # Prepare Asset Dict
+        new_asset = {
+            "asset_id": new_id,
+            "asset_class": atype,
+            "account_id": sel_acc_id,
+            "currency": curr,
+            "last_update": "N/A",
+            "manual_price": 0.0, 
+        }
+        
+        if is_financial:
+            # Cash/Liability Logic
+            # Ticker is auto-generated by model or we define a pattern here to be safe
+            prefix = "CASH" if atype == "現金" else "DEBT"
+            # If user provided custom name, append it to ticker for uniqueness or display?
+            # User wants "Items like Mortgage".
+            # Let's store custom name in 'name' field (if exists) or 'note'.
+            # Asset model has 'name'.
+            final_ticker = f"{prefix}-{curr}" 
+            if custom_name:
+                 new_asset["name"] = custom_name
+            
+            new_asset["symbol"] = final_ticker
+            new_asset["quantity"] = amount # Use quantity to store the monetary value for Cash/Debt
+            new_asset["avg_cost"] = 1.0 # 1.0 cost base for currency units
+            
+        else:
+            # Investment Logic
+            new_asset["symbol"] = ticker
+            new_asset["quantity"] = qty
+            new_asset["avg_cost"] = cost
+            
+        # Add to portfolio
+        st.session_state.portfolio.append(new_asset)
+        
+        # Create Loan Plan if needed
+        if is_financial and create_plan:
+            from modules.loan_service import create_loan_plan
+            
+            new_plan = create_loan_plan(
+                asset_id=new_id,
+                total_amount=amount,
+                annual_rate=plan_rate,
+                period_months=plan_years * 12,
+                start_date=str(plan_start)
             )
-            save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
-            st.session_state["force_refresh_market_data"] = True
-            st.success(f"已新增 {ticker}")
-            st.rerun()
+            
+            # Save plan to session state -> data_loader handles saving
+            if "loan_plans" not in st.session_state:
+                st.session_state.loan_plans = []
+            st.session_state.loan_plans.append(new_plan.to_dict())
+            
+        # Save All
+        save_all_data(
+            st.session_state.accounts, 
+            st.session_state.portfolio, 
+            st.session_state.allocation_targets, 
+            st.session_state.history_data,
+            st.session_state.get("loan_plans", [])
+        )
+        st.session_state["force_refresh_market_data"] = True
+        st.success(f"已新增 {atype} 項目")
+        st.rerun()
+
 
 
 # ===========================
@@ -550,7 +652,7 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
             fig1.update_layout(
                 margin=dict(t=30, b=0, l=0, r=0), height=180, showlegend=False
             )
-            st.plotly_chart(fig1, width="stretch")
+            st.plotly_chart(fig1, use_container_width=True)
 
             # 圖 2: 預期總資產
             if not df_market_data.empty:
@@ -576,7 +678,7 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
             fig2.update_layout(
                 margin=dict(t=30, b=0, l=0, r=0), height=180, showlegend=True
             )
-            st.plotly_chart(fig2, width="stretch")
+            st.plotly_chart(fig2, use_container_width=True)
 
     st.divider()
 
@@ -775,7 +877,7 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
 
         # 顯示清單表格
         draft_df = pd.DataFrame(st.session_state.draft_actions)
-        st.dataframe(draft_df, width="stretch", key="draft_actions_table")
+        st.dataframe(draft_df, use_container_width=True, key="draft_actions_table")
 
         total_planned = draft_df["Total"].sum()
         st.markdown(f"#### 總計畫投入金額: :green[{c_symbol}{total_planned:,.0f}]")
@@ -1038,7 +1140,7 @@ def render_asset_list_section(df_market_data, c_symbol):
             "Status": st.column_config.TextColumn("狀態", width="small", disabled=True),
         },
         hide_index=True,
-        width="stretch",
+        use_container_width=True,
         num_rows="fixed",
     )
 

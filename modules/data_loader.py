@@ -23,7 +23,7 @@ from modules.drive_manager import (
 )
 from modules.logger import get_logger
 from modules.exceptions import DriveServiceError, DataValidationError
-from models import Asset, AllocationSettings, Account, HistoryRecord
+from models import Asset, AllocationSettings, Account, HistoryRecord, LoanPlan
 from config import get_config
 
 logger = get_logger(__name__)
@@ -32,6 +32,7 @@ config = get_config()
 
 # Configuration Constants
 PORTFOLIO_FILENAME = "portfolio.xlsx" # The v3.0 single file
+LOANS_FILENAME = "loans.xlsx" # New file for loan plans
 SHEET_ACCOUNTS = "Accounts"
 SHEET_ASSETS = "Assets"
 SHEET_SETTINGS = "Settings"
@@ -138,42 +139,37 @@ def _migrate_legacy_data(service: Optional[Resource]) -> Dict[str, pd.DataFrame]
     
     return data_sheets
 
-def load_all_data() -> Tuple[List[dict], List[dict], Dict[str, float], List[dict]]:
+def load_all_data() -> Tuple[List[dict], List[dict], Dict[str, float], List[dict], List[dict]]:
     """
-    Load all data components from 'portfolio.xlsx'.
+    Load all data components from 'portfolio.xlsx' and 'loans.xlsx'.
     
     Returns:
-        Tuple: (accounts, assets, allocation_settings, history)
+        Tuple: (accounts, assets, allocation_settings, history, loan_plans)
         - accounts: List[dict]
         - assets: List[dict]
         - allocation_settings: Dict[str, float]
         - history: List[dict]
+        - loan_plans: List[dict]
     """
     service = get_service()
     
     # 1. Try to read the consolidated file
     dfs = {}
+    loan_plans = []
+    
     try:
+        from modules.drive_manager import get_file_id, ensure_folder_exists
+        from googleapiclient.http import MediaIoBaseDownload
+        
+        folder_id = ensure_folder_exists(service) if service else None
+        
+        # Load Portfolio
         if config.dev_mode:
             if os.path.exists(PORTFOLIO_FILENAME):
                 dfs = pd.read_excel(PORTFOLIO_FILENAME, sheet_name=None)
                 logger.info("DEV_MODE: Loaded portfolio.xlsx")
         elif service:
-            # Need a helper to read all sheets. 
-            # read_excel_from_drive returns list[dict] of the FIRST sheet usually or specified?
-            # Existing `read_excel_from_drive` uses pd.read_excel(BytesIO(content)).
-            # If we call it, it returns valid JSON-like list. But we want dict of DFs.
-            # We need to access the raw bytes or modify drive_manager. 
-            # Re-implementing specific download logic here for multi-sheet support.
-            
-            # Using private functionality or assuming we can get the file content.
-            # Ideally modules/drive_manager.py should expose a `download_file_bytes` function.
-            # For now, we reuse the logic: search file -> get_media -> BytesIO -> pd.read_excel(..., sheet_name=None)
-            
-            from modules.drive_manager import get_file_id, ensure_folder_exists
-            from googleapiclient.http import MediaIoBaseDownload
-            
-            folder_id = ensure_folder_exists(service)
+            # Load portfolio.xlsx from Drive
             file_id = get_file_id(service, folder_id, PORTFOLIO_FILENAME)
             if file_id:
                 request = service.files().get_media(fileId=file_id)
@@ -185,21 +181,42 @@ def load_all_data() -> Tuple[List[dict], List[dict], Dict[str, float], List[dict
                 fh.seek(0)
                 dfs = pd.read_excel(fh, sheet_name=None)
                 logger.info(f"Loaded portfolio.xlsx from Drive (ID: {file_id})")
-            
+        
+        # Load Loans
+        if config.dev_mode:
+            if os.path.exists(LOANS_FILENAME):
+                df_loans = pd.read_excel(LOANS_FILENAME)
+                loan_plans = df_loans.to_dict('records')
+                logger.info("DEV_MODE: Loaded loans.xlsx")
+        elif service:
+             # Load loans.xlsx from Drive
+            loan_file_id = get_file_id(service, folder_id, LOANS_FILENAME)
+            if loan_file_id:
+                request = service.files().get_media(fileId=loan_file_id)
+                fh = io.BytesIO()
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while done is False:
+                     status, done = downloader.next_chunk()
+                fh.seek(0)
+                df_loans = pd.read_excel(fh)
+                loan_plans = df_loans.to_dict('records')
+                logger.info(f"Loaded loans.xlsx from Drive (ID: {loan_file_id})")
+
     except Exception as e:
-        logger.warning(f"Failed to load portfolio.xlsx: {e}")
+        logger.warning(f"Failed to load data: {e}")
 
     # 2. If load failed or file missing, perform migration
     if not dfs:
         dfs = _migrate_legacy_data(service)
-        # Auto-save immediately to upgrade
         # Auto-save immediately to upgrade
         try:
             save_all_data(
                 dfs[SHEET_ACCOUNTS].to_dict('records'),
                 dfs[SHEET_ASSETS].to_dict('records'),
                 _parse_settings(dfs[SHEET_SETTINGS].to_dict('records')),
-                dfs[SHEET_HISTORY].to_dict('records')
+                dfs[SHEET_HISTORY].to_dict('records'),
+                loan_plans # Empty or existing
             )
         except Exception as e:
             logger.warning(f"Could not auto-save migrated data: {e}")
@@ -242,7 +259,7 @@ def load_all_data() -> Tuple[List[dict], List[dict], Dict[str, float], List[dict
             except: pass
         history = valid_hist
 
-    return accounts, assets, settings_dict, history
+    return accounts, assets, settings_dict, history, loan_plans
 
 def _parse_settings(records: List[dict]) -> Dict[str, float]:
     """Helper to parse settings sheet records to dict."""
@@ -259,16 +276,18 @@ def save_all_data(
     accounts: List[dict], 
     assets: List[dict], 
     settings: Dict[str, float], 
-    history: List[dict]
+    history: List[dict],
+    loan_plans: List[dict] = []
 ) -> None:
     """
-    Save all data components to 'portfolio.xlsx'.
+    Save all data components to 'portfolio.xlsx' and 'loans.xlsx'.
     
     Args:
         accounts: List[dict]
         assets: List[dict]
         settings: Dict[str, float]
         history: List[dict]
+        loan_plans: List[dict]
     """
     # 1. Prepare DataFrames
     
@@ -285,35 +304,72 @@ def save_all_data(
     # History
     df_hist = pd.DataFrame([HistoryRecord.from_dict(h).to_dict() for h in history])
     
-    # 2. Write to Excel Bytes
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+    # Loans
+    # Flatten structure if needed? Or just save the raw dicts if simple
+    # The LoanPlan has a 'schedule' which is a list.
+    # Saving nested lists to Excel is messy.
+    # Strategy:
+    # Save the main LoanPlan details (AssetId, Amount, Rate, Start) to 'loans.xlsx'
+    # For now, we omit the detailed schedule in the main sheet or stringify it.
+    # Given the requirements, maybe just saving the plan parameters is enough to RE-CALCULATE on load?
+    # Yes, we can re-calculate schedule on load using loan_service.
+    # So we strip 'schedule' before saving if it exists, to keep Excel clean.
+    
+    clean_plans = []
+    for plan in loan_plans:
+        p_copy = plan.copy()
+        if "schedule" in p_copy:
+            del p_copy["schedule"]
+        clean_plans.append(p_copy)
+    df_loans = pd.DataFrame(clean_plans)
+    
+    # 2. Write to Excel Bytes (Portfolio)
+    output_port = io.BytesIO()
+    with pd.ExcelWriter(output_port, engine='openpyxl') as writer:
         df_acc.to_excel(writer, sheet_name=SHEET_ACCOUNTS, index=False)
         df_ast.to_excel(writer, sheet_name=SHEET_ASSETS, index=False)
         df_set.to_excel(writer, sheet_name=SHEET_SETTINGS, index=False)
         df_hist.to_excel(writer, sheet_name=SHEET_HISTORY, index=False)
+    output_port.seek(0)
     
-    output.seek(0)
+    # Loans output
+    output_loans = io.BytesIO()
+    with pd.ExcelWriter(output_loans, engine='openpyxl') as writer:
+        df_loans.to_excel(writer, sheet_name="LoanPlans", index=False)
+    output_loans.seek(0)
     
     # 3. Save (Local or Drive)
     if config.dev_mode:
         with open(PORTFOLIO_FILENAME, "wb") as f:
-            f.write(output.getvalue())
-        logger.info(f"DEV_MODE: Saved {PORTFOLIO_FILENAME}")
+            f.write(output_port.getvalue())
+        with open(LOANS_FILENAME, "wb") as f:
+            f.write(output_loans.getvalue())
+        logger.info(f"DEV_MODE: Saved {PORTFOLIO_FILENAME} and {LOANS_FILENAME}")
     else:
         service = get_service()
         if not service:
             raise DriveServiceError("No Drive service available")
         
         from modules.drive_manager import upload_file_stream
+        
+        # Save Portfolio
         upload_file_stream(
             service, 
-            output, 
+            output_port, 
             PORTFOLIO_FILENAME, 
             config.google_drive.folder_name,
             mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-        logger.info(f"Saved {PORTFOLIO_FILENAME} to Google Drive")
+        
+        # Save Loans
+        upload_file_stream(
+            service, 
+            output_loans, 
+            LOANS_FILENAME, 
+            config.google_drive.folder_name,
+            mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        logger.info(f"Saved {PORTFOLIO_FILENAME} and {LOANS_FILENAME} to Google Drive")
 
 def save_snapshot(
     total_twd: float, 
@@ -363,13 +419,15 @@ def save_snapshot(
     
     # 4. Save Everything
     # Need full state
+    # Need full state
     accounts = st.session_state.get("accounts", [])
     portfolio = st.session_state.get("portfolio", [])
     allocation = st.session_state.get("allocation_targets", {})
+    loan_plans = st.session_state.get("loan_plans", [])
     
     # Update session state first
     st.session_state.history_data = updated_history
     
-    save_all_data(accounts, portfolio, allocation, updated_history)
+    save_all_data(accounts, portfolio, allocation, updated_history, loan_plans)
     logger.info(f"Snapshot saved for {today}")
 

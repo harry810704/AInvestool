@@ -94,8 +94,29 @@ class Asset(BaseModel):
     
     @field_validator('ticker')
     @classmethod
-    def ticker_uppercase(cls, v: str) -> str:
-        """Ensure ticker is uppercase."""
+    def ticker_validation(cls, v: str, info) -> str:
+        """
+        Validate and format ticker. 
+        Auto-generates ticker for Cash/Liabilities if empty.
+        """
+        # We need access to other fields (type/currency)
+        data = info.data
+        asset_type = data.get('type')
+        
+        if asset_type in ["現金", "負債"]:
+            if not v or v.strip() == "":
+                # Auto-generate
+                currency = data.get('currency', 'TWD')
+                prefix = "CASH" if asset_type == "現金" else "DEBT"
+                # Use a simple generation strategy or just generic name
+                # Unique ID is asset_id, Ticker is display symbol.
+                # Let's use currency as ticker? Or Custom Name?
+                return f"{prefix}-{currency}"
+            return v.upper()
+            
+        if not v or v.strip() == "":
+             raise ValueError("Ticker cannot be empty for investment assets")
+             
         return v.upper()
     
     @field_validator('type')
@@ -381,3 +402,52 @@ class HistoryRecord(BaseModel):
             crypto_val=float(data.get("crypto_val", 0)),
             loan_val=float(data.get("loan_val", 0)),
         )
+
+
+class LoanScheduleItem(BaseModel):
+    """
+    Single item in a loan amortization schedule.
+    """
+    payment_number: int
+    date: str
+    payment_amount: float
+    principal_paid: float
+    interest_paid: float
+    remaining_balance: float
+    
+    def to_dict(self) -> dict:
+        return {
+            "payment_number": self.payment_number,
+            "date": self.date,
+            "payment_amount": self.payment_amount,
+            "principal_paid": self.principal_paid,
+            "interest_paid": self.interest_paid,
+            "remaining_balance": self.remaining_balance
+        }
+
+
+class LoanPlan(BaseModel):
+    """
+    Represents a loan repayment plan linked to a Liability Asset.
+    """
+    asset_id: str = Field(..., description="ID of the Liability Asset")
+    total_amount: float = Field(..., gt=0, description="Total Loan Amount")
+    annual_rate: float = Field(..., ge=0, description="Annual Interest Rate (%)")
+    period_months: int = Field(..., gt=0, description="Loan Duration in Months")
+    start_date: str = Field(..., description="Loan Start Date (YYYY-MM-DD)")
+    schedule: list[LoanScheduleItem] = Field(default_factory=list, description="Amortization Schedule")
+    
+    extra_fees: float = Field(default=0.0, ge=0, description="One-time fees or setup costs")
+    
+    def to_dict(self) -> dict:
+        return {
+            "asset_id": self.asset_id,
+            "total_amount": self.total_amount,
+            "annual_rate": self.annual_rate,
+            "period_months": self.period_months,
+            "start_date": self.start_date,
+            "extra_fees": self.extra_fees,
+            # Schedule is usually derived or stored in a separate table structure for Excel flattened view
+            # But for object completeness we keep it here.
+            # When saving to Excel, we might just save the Plan params or the full schedule.
+        }
