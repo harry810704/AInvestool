@@ -452,14 +452,20 @@ def render_asset_list_section(df_market_data, c_symbol):
     df_raw = pd.DataFrame(st.session_state.portfolio)
     df_raw["Original_Index"] = df_raw.index
     
-    # Normalize columns
+    # Normalize columns - handle new and legacy field names
+    # Symbol/Ticker
     if "symbol" in df_raw.columns:
         df_raw["Ticker"] = df_raw["symbol"]
     elif "Ticker" not in df_raw.columns:
         df_raw["Ticker"] = ""
-        
-    if "asset_class" in df_raw.columns and "Type" not in df_raw.columns:
+    
+    # Type/asset_class/asset_type - prioritize new fields
+    if "asset_type" in df_raw.columns:
+        df_raw["Type"] = df_raw["asset_type"]
+    elif "asset_class" in df_raw.columns:
         df_raw["Type"] = df_raw["asset_class"]
+    elif "Type" not in df_raw.columns:
+        df_raw["Type"] = ""
 
     if "quantity" in df_raw.columns:
          df_raw["Quantity"] = df_raw["quantity"]
@@ -589,7 +595,17 @@ def render_asset_list_section(df_market_data, c_symbol):
             c1 = update_if_changed("quantity", "Quantity", float(row["Quantity"]), True)
             c2 = update_if_changed("avg_cost", "Avg_Cost", float(row["Avg_Cost"]), True)
             c3 = update_if_changed("symbol", "Ticker", row["Ticker"], False)
-            c4 = update_if_changed("asset_class", "Type", row["Type"], False)
+            
+            # Handle Type - update both asset_type and asset_class for compatibility
+            c4 = False
+            new_type = row["Type"]
+            old_type = asset.get("asset_type") or asset.get("asset_class") or asset.get("Type")
+            if str(new_type) != str(old_type):
+                asset["asset_type"] = new_type
+                asset["asset_class"] = new_type  # Keep legacy field
+                if "Type" in asset:
+                    asset["Type"] = new_type
+                c4 = True
             
             c5 = False
             new_acc_name = row["Account_Name"]
