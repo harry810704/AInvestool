@@ -26,8 +26,9 @@ from modules.market_service import (
     auto_update_portfolio,
 )
 from modules.ui_dashboard import render_dashboard
-from modules.ui_manager import render_manager
-from modules.ui_risk_analysis import render_risk_analysis
+from modules.ui_asset_management import render_asset_management
+from modules.ui_settings import render_settings
+from modules.ui_tools import render_tools
 from modules.state_manager import get_state_manager
 from modules.logger import get_logger
 from config import get_config
@@ -516,16 +517,25 @@ else:
         df_all = st.session_state.get("last_market_data", pd.DataFrame())
         total_val = st.session_state.get("last_total_val", 0)
 
-# Render tabs
-tab1, tab2, tab3 = st.tabs(["📊 投資戰情室", "⚙️ 設定與管理", "📈 風險分析"])
+
+# Render tabs - NEW 4-TAB STRUCTURE
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 儀表板", 
+    "💼 資產管理", 
+    "⚙️ 管理設定", 
+    "🛠️ 輔助工具"
+])
 
 with tab1:
     render_dashboard(df_all, c_symbol, total_val, current_usd_twd)
 
 with tab2:
-    render_manager(df_all, c_symbol, total_val)
+    render_asset_management(df_all, c_symbol)
 
 with tab3:
-    render_risk_analysis(state.portfolio, c_symbol)
+    render_settings()
+
+with tab4:
+    render_tools(df_all, c_symbol, total_val, state.portfolio)
 
 logger.debug("Application render complete")

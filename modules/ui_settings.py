@@ -1,31 +1,172 @@
-import streamlit as st
-from modules.data_loader import save_allocation_settings
+"""
+Settings UI Module.
 
-def render_settings():
+This module provides the Settings & Configuration page for managing
+accounts and asset allocation targets.
+"""
+
+import streamlit as st
+import pandas as pd
+import uuid
+from modules.data_loader import save_all_data
+from config import get_config
+
+config = get_config()
+
+
+def render_account_manager():
+    """Render account management section."""
+    st.subheader("🏦 帳戶管理")
+    st.caption("管理您的帳戶 - 投資帳戶、現金帳戶、信用帳戶等")
+    
+    if "accounts" not in st.session_state:
+        st.session_state.accounts = []
+        
+    accounts = st.session_state.accounts
+    
+    # List existing accounts
+    if accounts:
+        st.markdown("### 現有帳戶")
+        for i, acc in enumerate(accounts):
+            with st.expander(f"📁 {acc['name']} ({acc['type']})", expanded=False):
+                c1, c2 = st.columns(2)
+                new_name = c1.text_input("帳戶名稱", acc['name'], key=f"acc_name_{i}")
+                new_type = c2.selectbox(
+                    "帳戶類型", 
+                    config.ui.account_types, 
+                    index=config.ui.account_types.index(acc['type']) if acc['type'] in config.ui.account_types else 0, 
+                    key=f"acc_type_{i}"
+                )
+                
+                col_btn1, col_btn2 = st.columns(2)
+                
+                with col_btn1:
+                    if st.button("✅ 更新", key=f"acc_upd_{i}", use_container_width=True):
+                        acc['name'] = new_name
+                        acc['type'] = new_type
+                        save_all_data(
+                            st.session_state.accounts, 
+                            st.session_state.portfolio, 
+                            st.session_state.allocation_targets, 
+                            st.session_state.history_data,
+                            st.session_state.get("loan_plans", [])
+                        )
+                        st.success("已更新")
+                        st.rerun()
+                        
+                with col_btn2:
+                    if len(accounts) > 1 and st.button("🗑️ 刪除", key=f"acc_del_{i}", use_container_width=True):
+                        accounts.pop(i)
+                        save_all_data(
+                            st.session_state.accounts, 
+                            st.session_state.portfolio, 
+                            st.session_state.allocation_targets, 
+                            st.session_state.history_data,
+                            st.session_state.get("loan_plans", [])
+                        )
+                        st.success("已刪除")
+                        st.rerun()
+    
+    st.divider()
+    
+    # Add new account
+    st.markdown("### ➕ 新增帳戶")
+    with st.form("new_acc_form"):
+        c1, c2 = st.columns(2)
+        n_name = c1.text_input("帳戶名稱", placeholder="例如：美股投資帳戶")
+        n_type = c2.selectbox("帳戶類型", config.ui.account_types)
+        n_curr = c1.selectbox("帳戶幣別", ["TWD", "USD"], index=0)
+        
+        if st.form_submit_button("新增帳戶", type="primary", use_container_width=True):
+            if n_name:
+                new_acc = {
+                    "id": str(uuid.uuid4()),
+                    "account_id": str(uuid.uuid4()),  # Add this for consistency
+                    "name": n_name,
+                    "type": n_type,
+                    "currency": n_curr
+                }
+                st.session_state.accounts.append(new_acc)
+                save_all_data(
+                    st.session_state.accounts, 
+                    st.session_state.portfolio, 
+                    st.session_state.allocation_targets, 
+                    st.session_state.history_data,
+                    st.session_state.get("loan_plans", [])
+                )
+                st.success(f"已新增 {n_name}")
+                st.rerun()
+            else:
+                st.error("請輸入名稱")
+
+
+def render_allocation_section():
+    """Render asset allocation targets configuration."""
     st.subheader("🎯 投資配置目標設定")
+    st.caption("設定各資產類別的目標配置比例")
     
-    current_types = set([p['Type'] for p in st.session_state.portfolio])
-    default_types = {"美股", "台股", "虛擬貨幣", "稀有金屬"}
-    all_types = list(current_types.union(default_types))
-    
+    current_types = set([p.get("asset_class") or p.get("Type") for p in st.session_state.portfolio])
+    all_types = list(current_types.union({"美股", "台股", "虛擬貨幣", "現金", "負債"}))
     new_targets = {}
     total_pct = 0.0
-    
+
+    # Create input grid
+    st.markdown("#### 配置比例設定")
     cols = st.columns(4)
     for i, cat in enumerate(all_types):
         col = cols[i % 4]
         cur_val = st.session_state.allocation_targets.get(cat, 0.0)
-        val = col.number_input(f"{cat} (%)", 0.0, 100.0, float(cur_val), step=5.0)
+        val = col.number_input(
+            f"{cat} (%)", 0.0, 100.0, float(cur_val), step=5.0, key=f"alloc_{cat}"
+        )
         new_targets[cat] = val
         total_pct += val
-        
-    st.progress(min(total_pct/100, 1.0))
-    if abs(total_pct - 100) > 0.1:
-        st.warning(f"目前總和: {total_pct:.1f}% (目標應為 100%)")
+
+    st.divider()
+
+    # Progress bar and validation
+    c_bar, c_info = st.columns([4, 1])
+    with c_bar:
+        st.progress(min(total_pct / 100, 1.0))
+
+    with c_info:
+        if total_pct > 100:
+            st.markdown(f"🚫 :red[**{total_pct:.1f}%**]")
+        elif total_pct == 100:
+            st.markdown(f"✅ :green[**{total_pct:.1f}%**]")
+        else:
+            st.markdown(f"⚠️ **{total_pct:.1f}%**")
+
+    # Save button
+    if total_pct > 100:
+        st.error("總配置比例超過 100%，請調整後再儲存。")
+        st.button("💾 儲存配置設定", disabled=True, use_container_width=True)
     else:
-        st.success("配置完美 (100%)")
-        
-    if st.button("💾 儲存設定", type="primary"):
-        st.session_state.allocation_targets = new_targets
-        save_allocation_settings(new_targets)
-        st.success("設定已儲存")
+        if st.button("💾 儲存配置設定", type="primary", use_container_width=True):
+            st.session_state.allocation_targets = new_targets
+            save_all_data(
+                st.session_state.accounts, 
+                st.session_state.portfolio, 
+                st.session_state.allocation_targets, 
+                st.session_state.history_data,
+                st.session_state.get("loan_plans", [])
+            )
+            st.success("設定已儲存")
+            st.rerun()
+
+
+def render_settings():
+    """
+    Main entry point for Settings & Configuration page.
+    """
+    st.title("⚙️ 管理設定")
+    st.caption("設定帳戶資訊與投資配置目標")
+    
+    # Use tabs to organize settings
+    tab1, tab2 = st.tabs(["🏦 帳戶管理", "🎯 配置設定"])
+    
+    with tab1:
+        render_account_manager()
+    
+    with tab2:
+        render_allocation_section()
