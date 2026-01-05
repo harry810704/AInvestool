@@ -323,6 +323,22 @@ def add_asset_dialog():
         with c_curr:
             curr = st.selectbox("幣別", ["USD", "TWD"], index=1)
             
+        # Sub-type for more specific classification
+        if atype == "負債":
+            sub_type_options = config.ui.liability_types
+            sub_type_label = "負債類型"
+        elif atype == "現金":
+            sub_type_options = config.ui.cash_types
+            sub_type_label = "現金類型"
+        else:
+            sub_type_options = []
+            sub_type_label = "子類型"
+        
+        if sub_type_options:
+            sub_type = st.selectbox(sub_type_label, sub_type_options)
+        else:
+            sub_type = None
+            
         c_amt, c_ph = st.columns([2, 1])
         amount = c_amt.number_input("金額/餘額", min_value=0.0, value=0.0, step=1000.0)
         
@@ -369,7 +385,17 @@ def add_asset_dialog():
         qty = c3.number_input("持有數量", min_value=0.0, value=1.0, step=0.1)
         
         cost = st.number_input("平均成本 (單價)", min_value=0.0, value=100.0, step=0.1)
+        
+        # Optional: Sub-type for investments
+        sub_type = st.text_input("子類型 (選填)", placeholder="例如：成長股、價值股、ETF")
+        
         amount = 0
+    
+    # Common fields for all assets
+    st.markdown("---")
+    st.caption("📝 其他資訊 (選填)")
+    tags_input = st.text_input("標籤", placeholder="用逗號分隔，例如：核心,長期持有,科技")
+    note_input = st.text_area("備註", placeholder="補充說明", height=60)
 
     st.markdown("---")
     if st.button("確認新增", type="primary", use_container_width=True):

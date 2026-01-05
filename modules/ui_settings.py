@@ -46,6 +46,40 @@ def render_account_manager():
                     key=f"acc_type_{i}"
                 )
                 
+                c3, c4 = st.columns(2)
+                new_institution = c3.text_input(
+                    "金融機構", 
+                    acc.get('institution', ''), 
+                    key=f"acc_inst_{i}"
+                )
+                new_acc_num = c4.text_input(
+                    "帳號後4碼", 
+                    acc.get('account_number', ''), 
+                    key=f"acc_num_{i}",
+                    max_chars=4
+                )
+                
+                c5, c6 = st.columns(2)
+                current_curr = acc.get('base_currency') or acc.get('currency', 'TWD')
+                new_curr = c5.selectbox(
+                    "基準幣別",
+                    ["TWD", "USD"],
+                    index=0 if current_curr == 'TWD' else 1,
+                    key=f"acc_curr_{i}"
+                )
+                new_active = c6.checkbox(
+                    "啟用",
+                    acc.get('is_active', True),
+                    key=f"acc_active_{i}"
+                )
+                
+                new_desc = st.text_area(
+                    "描述",
+                    acc.get('description', ''),
+                    key=f"acc_desc_{i}",
+                    height=80
+                )
+                
                 col_btn1, col_btn2 = st.columns(2)
                 
                 with col_btn1:
@@ -53,6 +87,12 @@ def render_account_manager():
                         acc['name'] = new_name
                         acc['account_type'] = new_type
                         acc['type'] = new_type  # Legacy compatibility
+                        acc['institution'] = new_institution
+                        acc['account_number'] = new_acc_num
+                        acc['base_currency'] = new_curr
+                        acc['currency'] = new_curr  # Legacy
+                        acc['is_active'] = new_active
+                        acc['description'] = new_desc
                         save_all_data(
                             st.session_state.accounts, 
                             st.session_state.portfolio, 
@@ -82,9 +122,18 @@ def render_account_manager():
     st.markdown("### ➕ 新增帳戶")
     with st.form("new_acc_form"):
         c1, c2 = st.columns(2)
-        n_name = c1.text_input("帳戶名稱", placeholder="例如：美股投資帳戶")
+        n_name = c1.text_input("帳戶名稱", placeholder="例如：Firstrade 美股帳戶")
         n_type = c2.selectbox("帳戶類型", config.ui.account_types)
-        n_curr = c1.selectbox("帳戶幣別", ["TWD", "USD"], index=0)
+        
+        c3, c4 = st.columns(2)
+        n_institution = c3.text_input("金融機構", placeholder="例如：Firstrade, 富邦證券")
+        n_acc_num = c4.text_input("帳號後4碼", placeholder="選填", max_chars=4)
+        
+        c5, c6 = st.columns(2)
+        n_curr = c5.selectbox("基準幣別", ["TWD", "USD"], index=0)
+        n_active = c6.checkbox("啟用此帳戶", value=True)
+        
+        n_desc = st.text_area("描述", placeholder="選填：帳戶用途說明", height=80)
         
         if st.form_submit_button("新增帳戶", type="primary", use_container_width=True):
             if n_name:
@@ -96,9 +145,12 @@ def render_account_manager():
                     "name": n_name,
                     "account_type": n_type,
                     "type": n_type,  # Legacy compatibility
+                    "institution": n_institution,
+                    "account_number": n_acc_num,
                     "base_currency": n_curr,
                     "currency": n_curr,  # Legacy compatibility
-                    "is_active": True,
+                    "is_active": n_active,
+                    "description": n_desc,
                     "created_date": datetime.now().strftime("%Y-%m-%d")
                 }
                 st.session_state.accounts.append(new_acc)

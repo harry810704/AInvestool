@@ -254,8 +254,14 @@ class Asset(BaseModel):
             except:
                 return None
         
-        # Parse tags
+        # Parse tags - handle both string and non-string values
         tags_str = data.get("tags", "")
+        if tags_str and not isinstance(tags_str, str):
+            # Handle NaN or numeric values from Excel
+            try:
+                tags_str = str(tags_str) if str(tags_str) != "nan" else ""
+            except:
+                tags_str = ""
         tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
         
         return cls(
