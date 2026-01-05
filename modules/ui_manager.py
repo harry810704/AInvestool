@@ -133,7 +133,7 @@ def asset_action_dialog(index, asset):
                 if "Avg_Cost" in asset: asset["Avg_Cost"] = new_avg
                 if "Quantity" in asset: asset["Quantity"] = new_qty
                 
-                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
+                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
                 st.session_state["force_refresh_market_data"] = True
                 st.success("加倉成功！")
                 st.rerun()
@@ -160,7 +160,7 @@ def asset_action_dialog(index, asset):
                 
                 if "Quantity" in asset: asset["Quantity"] = asset["quantity"]
                 
-                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
+                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
                 st.session_state["force_refresh_market_data"] = True
                 st.success("減倉成功！")
                 st.rerun()
@@ -203,7 +203,7 @@ def asset_action_dialog(index, asset):
             if "Avg_Cost" in asset: asset["Avg_Cost"] = fc
             if "Account_ID" in asset: asset["Account_ID"] = asset["account_id"]
             
-            save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
+            save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
             st.session_state["force_refresh_market_data"] = True
             st.success("數據已更新")
             st.rerun()
@@ -230,7 +230,7 @@ def asset_action_dialog(index, asset):
                 asset["account_id"] = target_id
                 if "Account_ID" in asset: asset["Account_ID"] = target_id
                 
-                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
+                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
                 st.session_state["force_refresh_market_data"] = True
                 st.success(f"已移轉至 {target_name}")
                 st.rerun()
@@ -351,14 +351,14 @@ def asset_action_dialog(index, asset):
                 if "Suggested_SL" in asset: asset["Suggested_SL"] = result['sl_price']
                 if "Suggested_TP" in asset: asset["Suggested_TP"] = result['tp_price']
                 
-                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
+                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
                 st.success(f"✅ 已儲存 {ticker} 的停損停利建議！")
                 st.rerun()
 
     with tab_del:
         if st.button("❌ 確認刪除", key=f"btn_del_{index}", type="primary"):
             st.session_state.portfolio.pop(index)
-            save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
+            save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
             st.session_state["force_refresh_market_data"] = True
             st.rerun()
 
@@ -573,7 +573,7 @@ def render_allocation_section():
     else:
         if st.button("💾 儲存配置設定"):
             st.session_state.allocation_targets = new_targets
-            save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
+            save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
             st.success("設定已儲存")
 
 
@@ -934,7 +934,7 @@ def render_calculator_section(df_market_data, c_symbol, total_val):
                         }
                     )
 
-            save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
+            save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
             st.session_state["force_refresh_market_data"] = True
             st.session_state.draft_actions = []  # 清空
             st.success("交易已成功執行！請至資產清單查看。")
@@ -967,7 +967,7 @@ def render_account_manager():
             if st.button("更新", key=f"acc_upd_{i}"):
                 acc['name'] = new_name
                 acc['type'] = new_type
-                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
+                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
                 st.success("已更新")
                 st.rerun()
                 
@@ -976,7 +976,7 @@ def render_account_manager():
                 # For now just force delete and assets will point to missing ID (migrated to default next load? or zombie)
                 # Ideally warn user.
                 accounts.pop(i)
-                save_accounts(st.session_state.accounts)
+                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
                 st.success("已刪除")
                 st.rerun()
 
@@ -997,7 +997,7 @@ def render_account_manager():
                     "currency": "TWD"
                 }
                 st.session_state.accounts.append(new_acc)
-                save_accounts(st.session_state.accounts)
+                save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
                 st.success(f"已新増 {n_name}")
                 st.rerun()
             else:
@@ -1194,7 +1194,7 @@ def render_asset_list_section(df_market_data, c_symbol):
                 changes_detected = True
 
     if changes_detected:
-        save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data)
+        save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
         st.session_state["force_refresh_market_data"] = True
         st.toast("✅ 資產資料已更新", icon="💾")
         st.rerun()

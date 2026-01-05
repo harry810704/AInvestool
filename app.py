@@ -205,12 +205,13 @@ if not state.load_portfolio:
         logger.info("Loading from Google Drive")
         
     with st.spinner("正在讀取資料..."):
-        accounts, assets, settings, history = load_all_data()
+        accounts, assets, settings, history, loan_plans = load_all_data()
         
         state.accounts = accounts
         state.portfolio = assets
         state.allocation_targets = settings
         state.history_data = history
+        state.loan_plans = loan_plans
             
     state.load_portfolio = True
     # Force market data refresh when portfolio is loaded
@@ -244,7 +245,7 @@ if state.portfolio and not state.has_auto_updated: # Changed from 'portfolio' in
         
         if success > 0:
             # Save ALL data
-            save_all_data(state.accounts, state.portfolio, state.allocation_targets, state.history_data)
+            save_all_data(state.accounts, state.portfolio, state.allocation_targets, state.history_data, state.loan_plans)
             st.session_state["force_refresh_market_data"] = True
             logger.info(f"Portfolio updated: {success} success, {fail} failed")
         

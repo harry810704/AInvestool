@@ -246,6 +246,20 @@ class SessionStateManager:
         """Set history data in session state."""
         st.session_state["history_data"] = value
 
+    # Loan Plans
+    
+    @property
+    def loan_plans(self) -> List[dict]:
+        """Get loan plans from session state."""
+        if "loan_plans" not in st.session_state:
+            st.session_state["loan_plans"] = []
+        return st.session_state["loan_plans"]
+    
+    @loan_plans.setter
+    def loan_plans(self, value: List[dict]):
+        """Set loan plans in session state."""
+        st.session_state["loan_plans"] = value
+
     # Draft Actions (for deployment planning)
     
     @property
