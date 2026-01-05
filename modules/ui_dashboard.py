@@ -180,11 +180,12 @@ def render_account_breakdown(df_all: pd.DataFrame, c_symbol: str) -> None:
                 with cols[j]:
                     pl_color = "#4ade80" if acc_pl >= 0 else "#f87171"
                     roi_color = "#34d399" if acc_roi >= 0 else "#f87171"
+                    val_color = "#818cf8" if acc_value >= 0 else "#f87171" # Blue if positive, Red if debt
                     
                     st.markdown(f"""
                     <div class="css-card">
                         <div style='font-size: 1.1em; font-weight: bold; margin-bottom: 5px; color: #f1f5f9;'>🏦 {acc_name}</div>
-                        <div style='font-size: 1.5em; font-weight: bold; color: #818cf8; margin: 5px 0;'>{c_symbol}{acc_value:,.0f}</div>
+                        <div style='font-size: 1.5em; font-weight: bold; color: {val_color}; margin: 5px 0;'>{c_symbol}{acc_value:,.0f}</div>
                         <div style='color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;'>佔比: {acc_pct:.1f}%</div>
                         <div style='color: {pl_color}; font-size: 0.9em; font-weight: bold;'>損益: {c_symbol}{acc_pl:,.0f}</div>
                         <div style='color: {roi_color}; font-size: 0.9em;'>ROI: {acc_roi:+.1f}%</div>
@@ -298,18 +299,17 @@ def render_dashboard(df_all: pd.DataFrame, c_symbol: str, total_val: float, exch
     # But we might want to separate Assets and Liabilities
     
     # Calculate Total Assets (Positive Net Value) and Total Liabilities (Negative Net Value) (approx)
-    # Better: Filter by Type
-    assets_val = df_all[df_all['Type'] != '負債']['Market_Value'].sum()
-    liabilities_val = df_all[df_all['Type'] == '負債']['Market_Value'].sum()
+    # Use Category if available, else fallback to Type
+    if "Category" in df_all.columns:
+        assets_val = df_all[df_all['Category'] != 'liability']['Market_Value'].sum()
+        liabilities_val = df_all[df_all['Category'] == 'liability']['Market_Value'].sum()
+        g_cost = df_all[df_all['Category'] != 'liability']['Total_Cost'].sum()
+    else:
+        # Fallback
+        assets_val = df_all[df_all['Type'] != '負債']['Market_Value'].sum()
+        liabilities_val = df_all[df_all['Type'] == '負債']['Market_Value'].sum()
+        g_cost = df_all[df_all['Type'] != '負債']['Total_Cost'].sum()
     
-    # Total Cost logic:
-    # Assets Cost is positive. Liabilities Cost (Principal) is positive in data, but debts.
-    # KPI Logic: 
-    # Net Worth = Assets - Liabilities.
-    # Total Invested = Assets Cost.
-    # Liability Principal is separate.
-    
-    g_cost = df_all[df_all['Type'] != '負債']['Total_Cost'].sum()
     g_pl = df_all['Unrealized_PL'].sum() # PL of Assets + PL of Liabilities
     g_roi = (g_pl / g_cost) * 100 if g_cost > 0 else 0
     

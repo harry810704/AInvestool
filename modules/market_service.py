@@ -294,7 +294,8 @@ def get_market_data(
     
     for item in portfolio:
         ticker = item.get("symbol") or item.get("Ticker")
-        asset_type = item.get("asset_class") or item.get("Type")
+        asset_type = item.get("asset_type") or item.get("asset_class") or item.get("Type")
+        category = item.get("category") or ("liability" if asset_type == "負債" else "investment") # Fallback for legacy
         asset_currency = item.get("currency") or item.get("Currency", "USD")
         
         manual_price = item.get("manual_price")
@@ -314,9 +315,12 @@ def get_market_data(
         daily_change_pct = 0.0
         history_data = pd.Series()
         status = "⚠️ 待更新"
+
+        # Determine if it is a financial asset (Cash/Liability)
+        is_financial = category in ["cash", "liability"] or asset_type in ["現金", "負債"]
         
         # Skip Yahoo fetch for Cash/Liability
-        if asset_type in ["現金", "負債"]:
+        if is_financial:
              # For Cash/Liability, Price is usually 1 (face value) or Manual Price
              # If Manual Price is set, use it. Otherwise default to 1.
              if manual_price > 0:
@@ -385,18 +389,16 @@ def get_market_data(
         total_cost_base = base_avg_cost * qty
         
         # Net Value logic: Liabilities are negative contribution to Net Worth
-        net_value_base = -market_value_base if asset_type == "負債" else market_value_base
+        is_liability = category == "liability" or asset_type == "負債"
+        net_value_base = -market_value_base if is_liability else market_value_base
         
-        unrealized_pl_base = market_value_base - total_cost_base
-        # For liability: PL is Debt Decrease? Or Debt Increase is Loss?
-        # Usually: Cost (Principal) - Current (Balance). If Balance > Cost, Loss.
-        # PL = Cost - MarketValue? 
-        # If I borrowed 100 (Cost), now owe 110 (MarketValue), PL is -10.
-        # So PL = Cost - MarketValue logic works for Liability?
-        # Let's check: 100 (Cost) - 110 (Val) = -10. Correct.
-        # For Asset: 110 (Val) - 100 (Cost) = 10.
-        if asset_type == "負債":
+        # P/L Logic
+        if is_liability:
+             # For liability: PL = Cost (Principal) - Current Market Value (Current Debt)
+             # If Debt grows (Market Value > Cost), PL is negative.
              unrealized_pl_base = total_cost_base - market_value_base
+        else:
+             unrealized_pl_base = market_value_base - total_cost_base
         
         roi = (unrealized_pl_base / total_cost_base) * 100 if total_cost_base > 0 else 0
         
@@ -411,7 +413,7 @@ def get_market_data(
             display_market_value = current_price * qty
             display_total_cost = display_cost_basis * qty
             
-            if asset_type == "負債":
+            if is_liability:
                 display_pl = display_total_cost - display_market_value
             else:
                 display_pl = display_market_value - display_total_cost
@@ -425,6 +427,7 @@ def get_market_data(
 
         
         data_list.append({
+            "Category": category, # New field
             "Type": asset_type,
             "Ticker": ticker,
             "Quantity": qty,
@@ -448,7 +451,7 @@ def get_market_data(
             "Daily_Change (%)": daily_change_pct * 100,
             "History": history_data,
             "Status": status,
-            "Avg_Cost": base_avg_cost, # Keep for backward compat, but use Display_Cost_Basis in UI
+            "Avg_Cost": base_avg_cost, # Keep for backward compat
             "Currency": asset_currency,
             "Last_Update": last_update,
             "Account_ID": account_id,
