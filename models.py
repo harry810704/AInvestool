@@ -246,16 +246,40 @@ class Asset(BaseModel):
         # Handle symbol/ticker
         symbol = data.get("symbol") or data.get("Ticker") or data.get("ticker", "")
         
-        # Handle account_id with robust fallback
-        raw_acc_id = data.get("account_id")
-        if raw_acc_id is None or (isinstance(raw_acc_id, float) and pd.isna(raw_acc_id)) or str(raw_acc_id).strip() == "":
-            raw_acc_id = data.get("Account_ID")
-            
-        if raw_acc_id is None or (isinstance(raw_acc_id, float) and pd.isna(raw_acc_id)) or str(raw_acc_id).strip() == "":
-            final_acc_id = "default_main"
-        else:
-            final_acc_id = str(raw_acc_id)
-            if final_acc_id == "nan": final_acc_id = "default_main"
+        # Robust Account ID Search
+        final_acc_id = "default_main"
+        
+        # 1. Try explicit keys first for speed
+        candidates = ["account_id", "Account_ID", "AccountID", "accountid"]
+        found_id = None
+        
+        for key in candidates:
+            val = data.get(key)
+            if val is not None:
+                # Check for validity (not NaN, not empty string)
+                if isinstance(val, float) and pd.isna(val):
+                    continue
+                s_val = str(val).strip()
+                if s_val == "" or s_val.lower() == "nan":
+                    continue
+                found_id = s_val
+                break
+        
+        # 2. If not found, case-insensitive scan of all keys
+        if not found_id:
+            for k, v in data.items():
+                if k.lower().replace("_", "") == "accountid":
+                     if v is not None:
+                         if isinstance(v, float) and pd.isna(v):
+                             continue
+                         s_val = str(v).strip()
+                         if s_val == "" or s_val.lower() == "nan":
+                             continue
+                         found_id = s_val
+                         break
+                         
+        if found_id:
+            final_acc_id = found_id
         
         # Parse optional floats
         def parse_opt_float(k1: str, k2: str = "") -> Optional[float]:
