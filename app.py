@@ -272,54 +272,86 @@ if state.portfolio and not state.has_auto_updated: # Changed from 'portfolio' in
 
 logger.info("Application started")
 
-# Inject Global Custom CSS
+# Inject Global Custom CSS - Dark Theme
 st.markdown("""
 <style>
-    /* Card Styling */
+    /* Card Styling - Dark Theme */
     div[data-testid="stMetric"], div.css-card {
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+        border: 1px solid #475569;
+        padding: 18px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         transition: all 0.3s ease;
+        color: #f1f5f9;
     }
     div[data-testid="stMetric"]:hover, div.css-card:hover {
-        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+        transform: translateY(-2px);
+        border-color: #64748b;
+    }
+    
+    /* Metric labels - ensure visibility */
+    div[data-testid="stMetric"] label {
+        color: #cbd5e1 !important;
+        font-weight: 600;
+    }
+    
+    /* Metric values - ensure visibility */
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        color: #f1f5f9 !important;
+        font-weight: 700;
     }
 
-    /* Table Styling */
+    /* Table Styling - Dark Theme */
     div[data-testid="stDataFrame"] {
-        border: 1px solid #f0f2f6;
-        border-radius: 10px;
-        padding: 5px;
+        border: 1px solid #475569;
+        border-radius: 12px;
+        padding: 8px;
+        background-color: #1e293b;
     }
 
-    /* Tabs */
+    /* Tabs - Dark Theme */
     .stTabs [data-baseweb="tab-list"] {
         gap: 20px;
+        background-color: transparent;
     }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
         white-space: pre-wrap;
-        background-color: transparent;
-        border-radius: 5px 5px 0 0;
+        background-color: #1e293b;
+        border-radius: 8px 8px 0 0;
         font-size: 16px;
         font-weight: 600;
+        color: #94a3b8;
+        border: 1px solid #334155;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #f0f2f6;
-        border-bottom: 2px solid #5D69B1;
+        background: linear-gradient(135deg, #334155 0%, #475569 100%);
+        border-bottom: 3px solid #60a5fa;
+        color: #f1f5f9;
     }
 
-    /* Button Styling */
+    /* Button Styling - Enhanced */
     button[kind="primary"] {
-        background-color: #5D69B1;
+        background: linear-gradient(135deg, #5D69B1 0%, #4A569D 100%);
         border-color: #5D69B1;
+        color: white;
+        font-weight: 600;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(93, 105, 177, 0.3);
+        transition: all 0.3s ease;
     }
     button[kind="primary"]:hover {
-        background-color: #4A569D;
+        background: linear-gradient(135deg, #4A569D 0%, #3d4a82 100%);
         border-color: #4A569D;
+        box-shadow: 0 4px 12px rgba(93, 105, 177, 0.5);
+        transform: translateY(-1px);
+    }
+    
+    /* General text colors for dark theme */
+    .css-card div {
+        color: #e2e8f0;
     }
 </style>
 """, unsafe_allow_html=True)

@@ -66,10 +66,10 @@ def render_asset_liability_ratio(df_all: pd.DataFrame, assets_val: float, liabil
             ratio_color = "red"
         
         st.markdown(f"""
-        <div style='background-color: #f8f9fa; padding: 15px; border-radius: 10px; text-align: center;'>
-            <div style='color: #666; font-size: 0.9em;'>資產負債比</div>
+        <div class="css-card" style="text-align: center;">
+            <div style='color: #cbd5e1; font-size: 0.9em;'>資產負債比</div>
             <div style='font-size: 1.8em; font-weight: bold; color: {ratio_color}; margin: 5px 0;'>{ratio_display}</div>
-            <div style='color: #999; font-size: 0.75em;'>負債佔資產比: {debt_to_asset_ratio*100:.1f}%</div>
+            <div style='color: #94a3b8; font-size: 0.75em;'>負債佔資產比: {debt_to_asset_ratio*100:.1f}%</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -150,13 +150,13 @@ def render_account_breakdown(df_all: pd.DataFrame, c_symbol: str) -> None:
     
     # Group by account
     account_totals = df_all.groupby("Account_ID").agg({
-        "Market_Value": "sum",
+        "Net_Value": "sum",
         "Total_Cost": "sum",
         "Unrealized_PL": "sum"
     }).reset_index()
     
     # Calculate total for percentage
-    total_all_accounts = account_totals["Market_Value"].sum()
+    total_all_accounts = account_totals["Net_Value"].sum()
     
     # Display account cards
     num_accounts = len(account_totals)
@@ -170,21 +170,21 @@ def render_account_breakdown(df_all: pd.DataFrame, c_symbol: str) -> None:
                 row = account_totals.iloc[idx]
                 acc_id = row["Account_ID"]
                 acc_name = account_map.get(acc_id, "未知帳戶")
-                acc_value = row["Market_Value"]
+                acc_value = row["Net_Value"]
                 acc_cost = row["Total_Cost"]
                 acc_pl = row["Unrealized_PL"]
                 acc_roi = (acc_pl / acc_cost * 100) if acc_cost > 0 else 0
                 acc_pct = (acc_value / total_all_accounts * 100) if total_all_accounts > 0 else 0
                 
                 with cols[j]:
-                    pl_color = "green" if acc_pl >= 0 else "red"
-                    roi_color = "#009688" if acc_roi >= 0 else "#e53e3e"
+                    pl_color = "#4ade80" if acc_pl >= 0 else "#f87171"
+                    roi_color = "#34d399" if acc_roi >= 0 else "#f87171"
                     
                     st.markdown(f"""
-                    <div style='background-color: #f8f9fa; padding: 15px; border-radius: 10px; border: 1px solid #e0e0e0;'>
-                        <div style='font-size: 1.1em; font-weight: bold; margin-bottom: 5px;'>🏦 {acc_name}</div>
-                        <div style='font-size: 1.5em; font-weight: bold; color: #5D69B1; margin: 5px 0;'>{c_symbol}{acc_value:,.0f}</div>
-                        <div style='color: #666; font-size: 0.85em; margin-bottom: 5px;'>佔比: {acc_pct:.1f}%</div>
+                    <div class="css-card">
+                        <div style='font-size: 1.1em; font-weight: bold; margin-bottom: 5px; color: #f1f5f9;'>🏦 {acc_name}</div>
+                        <div style='font-size: 1.5em; font-weight: bold; color: #818cf8; margin: 5px 0;'>{c_symbol}{acc_value:,.0f}</div>
+                        <div style='color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;'>佔比: {acc_pct:.1f}%</div>
                         <div style='color: {pl_color}; font-size: 0.9em; font-weight: bold;'>損益: {c_symbol}{acc_pl:,.0f}</div>
                         <div style='color: {roi_color}; font-size: 0.9em;'>ROI: {acc_roi:+.1f}%</div>
                     </div>
@@ -466,7 +466,7 @@ def render_category_overview(df_all: pd.DataFrame, total_val: float, c_symbol: s
     """
     # Group by Type and calculate metrics
     df_grouped = df_all.groupby('Type').agg({
-        'Market_Value': 'sum',
+        'Net_Value': 'sum',
         'Total_Cost': 'sum',
         'Unrealized_PL': 'sum'
     }).reset_index()
@@ -499,13 +499,22 @@ def render_category_overview(df_all: pd.DataFrame, total_val: float, c_symbol: s
                 with c2:
                     # Logic for Display Value (Native vs Base) is tricky for Category Aggregation.
                     # Category Sum implies Base Currency always, because you can't sum mixed currencies.
-                    # So Overview always uses Base Currency.
-                    st.markdown(f"**{c_symbol}{row['Market_Value']:,.0f}**")
-                    st.progress(min(type_weight / 100, 1.0))
+                    # So Overview always uses Base Currency. Net_Value can be negative for Liabilities.
+                    val = row['Net_Value']
+                    val_color = "#f87171" if val < 0 else None
+                    val_style = f"color: {val_color};" if val_color else ""
+                    
+                    st.markdown(f"**<span style='{val_style}'>{c_symbol}{val:,.0f}</span>**", unsafe_allow_html=True)
+                    # For progress bar, we take absolute contribution or handle standard logic
+                    # If total_val (Net Worth) is positive, and this is liability, implicit weight is negative?
+                    # Streamlit progress bar needs 0.0-1.0
+                    
+                    safe_weight = abs(type_weight) # Use absolute for visual bar
+                    st.progress(min(safe_weight / 100, 1.0))
                     st.caption(f"全資產佔比: {type_weight:.1f}%")
                     
                 with c3:
-                    pl_color = "green" if row['Unrealized_PL'] > 0 else "red"
+                    pl_color = "#4ade80" if row['Unrealized_PL'] >= 0 else "#f87171"
                     st.markdown(f"<span style='color:{pl_color}; font-weight:bold'>{c_symbol}{row['Unrealized_PL']:,.0f}</span>", unsafe_allow_html=True)
                     
                     roi_bg = "#e6fffa" if row['ROI'] > 0 else "#fff5f5"
@@ -582,13 +591,13 @@ def render_single_category_detail(df_all: pd.DataFrame, total_val: float, c_symb
         # Select and Rename columns
         display_df = display_df[[
             'Ticker', 'Quantity', 'Avg_Cost', 'Current_Price',
-            'Market_Value', 'Unrealized_PL', 'ROI (%)', 'Cat_Weight', 'Status', 'Last_Update'
+            'Net_Value', 'Unrealized_PL', 'ROI (%)', 'Cat_Weight', 'Status', 'Last_Update'
         ]]
 
         # We need to ensure types are numeric for column_config to work
         # Ticker: Text
         # Quantity, Avg_Cost, Current_Price: Number
-        # Market_Value, Unrealized_PL: Currency
+        # Net_Value, Unrealized_PL: Currency
         # ROI, Cat_Weight: Number (Percentage)
 
         st.dataframe(
@@ -599,8 +608,8 @@ def render_single_category_detail(df_all: pd.DataFrame, total_val: float, c_symb
                 "Quantity": st.column_config.NumberColumn("持倉", format="%.2f"),
                 "Avg_Cost": st.column_config.NumberColumn("成本", format="%.2f"),
                 "Current_Price": st.column_config.NumberColumn("現價", format="%.2f"),
-                "Market_Value": st.column_config.NumberColumn(
-                    f"市值 ({c_symbol})",
+                "Net_Value": st.column_config.NumberColumn(
+                    f"淨值 ({c_symbol})",
                     format=f"{c_symbol}%.0f"
                 ),
                 "Unrealized_PL": st.column_config.NumberColumn(
@@ -890,27 +899,27 @@ def render_top10_holdings_dashboard(df_all: pd.DataFrame, c_symbol: str):
                     badge_color = "#FFD700" if rank == 1 else ("#C0C0C0" if rank == 2 else ("#CD7F32" if rank == 3 else "#5D69B1"))
                     
                     st.markdown(f"""
-                    <div style='background-color: #f8f9fa; padding: 15px; border-radius: 10px; border: 2px solid {badge_color}; margin-bottom: 10px;'>
+                    <div class="css-card" style="border: 2px solid {badge_color}; margin-bottom: 10px;">
                         <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;'>
                             <div>
                                 <span style='background-color: {badge_color}; color: white; padding: 4px 8px; border-radius: 5px; font-weight: bold; margin-right: 8px;'>#{rank}</span>
-                                <span style='font-size: 1.2em; font-weight: bold;'>{row.get('Ticker', 'N/A')}</span>
+                                <span style='font-size: 1.2em; font-weight: bold; color: #f1f5f9;'>{row.get('Ticker', 'N/A')}</span>
                             </div>
                             <div style='text-align: right;'>
-                                <div style='font-size: 0.85em; color: #666;'>{row.get('Type', 'N/A')}</div>
+                                <div style='font-size: 0.85em; color: #94a3b8;'>{row.get('Type', 'N/A')}</div>
                             </div>
                         </div>
                         <div style='margin: 10px 0;'>
-                            <div style='font-size: 1.4em; font-weight: bold; color: #5D69B1;'>{c_symbol}{row.get('Market_Value', 0):,.0f}</div>
-                            <div style='font-size: 0.85em; color: #666;'>持倉: {row.get('Quantity', 0):.2f} | 成本: {row.get('Avg_Cost', 0):.2f}</div>
+                            <div style='font-size: 1.4em; font-weight: bold; color: #818cf8;'>{c_symbol}{row.get('Market_Value', 0):,.0f}</div>
+                            <div style='font-size: 0.85em; color: #94a3b8;'>持倉: {row.get('Quantity', 0):.2f} | 成本: {row.get('Avg_Cost', 0):.2f}</div>
                         </div>
                         <div style='display: flex; justify-content: space-between; margin-top: 10px;'>
                             <div>
-                                <div style='font-size: 0.8em; color: #666;'>損益</div>
+                                <div style='font-size: 0.8em; color: #94a3b8;'>損益</div>
                                 <div style='font-size: 1.1em; font-weight: bold; color: {pl_color};'>{c_symbol}{pl:,.0f}</div>
                             </div>
                             <div style='text-align: right;'>
-                                <div style='font-size: 0.8em; color: #666;'>ROI</div>
+                                <div style='font-size: 0.8em; color: #94a3b8;'>ROI</div>
                                 <div style='font-size: 1.1em; font-weight: bold; color: {roi_color};'>{roi:+.2f}%</div>
                             </div>
                         </div>
