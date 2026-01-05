@@ -78,11 +78,39 @@ class UIConfig:
     page_icon: str = "☁️"
     layout: str = "wide"
     
-    # Asset types
+    # === Asset Categories (Main) ===
+    asset_categories: Dict[str, str] = field(default_factory=lambda: {
+        "investment": "投資資產",
+        "cash": "現金資產",
+        "liability": "負債資產"
+    })
+    
+    # === Investment Types ===
+    investment_types: List[str] = field(default_factory=lambda: [
+        "美股", "台股", "港股", "ETF", 
+        "虛擬貨幣", "債券", "基金", "REITs", "稀有金屬", "其他"
+    ])
+    
+    # === Cash Types ===
+    cash_types: List[str] = field(default_factory=lambda: [
+        "現金", "活期存款", "定期存款", "貨幣市場基金"
+    ])
+    
+    # === Liability Types ===
+    liability_types: List[str] = field(default_factory=lambda: [
+        "房貸", "車貸", "信貸", "學貸", "信用卡債", "其他負債"
+    ])
+    
+    # === Legacy Asset Types (backward compatibility) ===
     asset_types: List[str] = field(default_factory=lambda: ["美股", "台股", "虛擬貨幣", "稀有金屬", "現金", "負債"])
     
     # Account types
-    account_types: List[str] = field(default_factory=lambda: ["現金帳戶", "投資帳戶", "信用帳戶"])
+    account_types: List[str] = field(default_factory=lambda: [
+        "美股券商", "台股券商", "港股券商",
+        "銀行活存", "銀行定存",
+        "信用卡", "房貸帳戶", "車貸帳戶", "信貸帳戶",
+        "加密貨幣交易所", "退休金帳戶", "其他"
+    ])
     
     # Currency options
     currencies: List[str] = field(default_factory=lambda: ["Auto", "USD", "TWD"])

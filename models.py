@@ -6,71 +6,127 @@ used throughout the application.
 """
 
 from datetime import datetime
-from typing import Optional, Literal
+from typing import Optional, Literal, List
+from enum import Enum
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 import pandas as pd
+import uuid
 
+
+class AccountType(str, Enum):
+    """帳戶類型枚舉"""
+    BROKERAGE_US = "美股券商"
+    BROKERAGE_TW = "台股券商"
+    BROKERAGE_HK = "港股券商"
+    BANK_CHECKING = "銀行活存"
+    BANK_SAVINGS = "銀行定存"
+    CREDIT_CARD = "信用卡"
+    MORTGAGE = "房貸帳戶"
+    AUTO_LOAN = "車貸帳戶"
+    PERSONAL_LOAN = "信貸帳戶"
+    CRYPTO_EXCHANGE = "加密貨幣交易所"
+    RETIREMENT = "退休金帳戶"
+    OTHER = "其他"
 
 
 class Account(BaseModel):
     """
-    Represents a financial account (e.g., Bank Account, Brokerage, Credit Card).
+    Enhanced financial account model representing real-world accounts.
     
     Attributes:
-        id: Unique identifier for the account
-        name: Account name (e.g., "Chase Checking", "Fidelity")
-        type: Account type (e.g., "現金帳戶", "投資帳戶", "信用帳戶")
-        balance: Current balance (optional, mainly calculated from assets)
-        currency: Base currency for the account
+        account_id: Unique identifier for the account
+        name: Account display name (e.g., "Firstrade 美股帳戶")
+        institution: Financial institution name (e.g., "Firstrade", "富邦證券")
+        account_type: Account type from AccountType enum
+        account_number: Account number (last 4 digits for security)
+        base_currency: Base currency for the account
+        is_active: Whether the account is currently active
+        description: Optional account description
+        created_date: Account creation date
     """
     model_config = ConfigDict(validate_assignment=True)
     
-    id: str = Field(..., description="Unique Account ID")
+    account_id: str = Field(default_factory=lambda: f"acc_{uuid.uuid4().hex[:12]}", description="Unique Account ID")
     name: str = Field(..., description="Account Name")
-    type: str = Field(..., description="Account Type")
-    currency: str = Field(default="TWD", description="Base Currency")
+    institution: str = Field(default="", description="Financial Institution")
+    account_type: str = Field(default="其他", description="Account Type")
+    account_number: str = Field(default="", description="Account Number (last 4 digits)")
+    base_currency: str = Field(default="TWD", description="Base Currency")
+    is_active: bool = Field(default=True, description="Is Active")
+    description: str = Field(default="", description="Description")
+    created_date: str = Field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d"), description="Created Date")
     
-    @field_validator('type')
+    # Legacy field for backward compatibility
+    type: Optional[str] = Field(None, description="Legacy type field (deprecated)")
+    
+    @field_validator('account_type')
     @classmethod
-    def validate_type(cls, v: str) -> str:
-        """Validate account type against known categories."""
-        valid_types = ["現金帳戶", "投資帳戶", "信用帳戶"]
+    def validate_account_type(cls, v: str) -> str:
+        """Validate account type."""
+        # Allow both enum values and legacy types
+        valid_types = [e.value for e in AccountType] + ["現金帳戶", "投資帳戶", "信用帳戶"]
         if v not in valid_types:
             import warnings
-            warnings.warn(f"Account type '{v}' is not in standard types: {valid_types}")
+            warnings.warn(f"Account type '{v}' is not in standard types")
         return v
     
     def to_dict(self) -> dict:
+        """Convert to dictionary for Excel serialization."""
         return {
-            "account_id": self.id,
+            "account_id": self.account_id,
             "name": self.name,
-            "type": self.type,
-            "currency": self.currency
+            "institution": self.institution,
+            "account_type": self.account_type,
+            "account_number": self.account_number,
+            "base_currency": self.base_currency,
+            "is_active": self.is_active,
+            "description": self.description,
+            "created_date": self.created_date
         }
     
     @classmethod
     def from_dict(cls, data: dict) -> "Account":
+        """Create Account from dictionary with backward compatibility."""
+        # Handle legacy 'type' field
+        account_type = data.get("account_type")
+        if not account_type:
+            legacy_type = data.get("type", "其他")
+            # Map legacy types to new types
+            type_mapping = {
+                "投資帳戶": "其他",
+                "現金帳戶": "銀行活存",
+                "信用帳戶": "信用卡"
+            }
+            account_type = type_mapping.get(legacy_type, "其他")
+        
         return cls(
-            id=str(data.get("account_id") or data.get("id", "")),
+            account_id=str(data.get("account_id") or data.get("id", f"acc_{uuid.uuid4().hex[:12]}")),
             name=str(data.get("name", "")),
-            type=str(data.get("type", "投資帳戶")),
-            currency=str(data.get("currency", "TWD"))
+            institution=str(data.get("institution", "")),
+            account_type=account_type,
+            account_number=str(data.get("account_number", "")),
+            base_currency=str(data.get("base_currency") or data.get("currency", "TWD")),
+            is_active=bool(data.get("is_active", True)),
+            description=str(data.get("description", "")),
+            created_date=str(data.get("created_date", datetime.now().strftime("%Y-%m-%d")))
         )
+
+
+class AssetCategory(str, Enum):
+    """資產主類別枚舉"""
+    INVESTMENT = "investment"    # 投資資產
+    CASH = "cash"               # 現金資產
+    LIABILITY = "liability"      # 負債資產
 
 
 class Asset(BaseModel):
     """
-    Represents a single investment asset in the portfolio.
+    Enhanced asset model with three-tier classification.
     
-    Attributes:
-        type: Asset category (e.g., "美股", "台股", "虛擬貨幣", "稀有金屬", "現金", "負債")
-        ticker: Stock ticker symbol or Unique ID
-        quantity: Number of shares/units held
-        avg_cost: Average cost per share/unit
-        currency: Currency of the asset (USD or TWD)
-        manual_price: Manually set price (0.0 if using live data)
-        last_update: Last price update timestamp (ISO format or "N/A")
-        account_id: ID of the account this asset belongs to
+    Classification:
+        - category: Main category (investment/cash/liability)
+        - asset_type: Specific type (e.g., "美股", "房貸")
+        - sub_type: Optional sub-classification
     """
     
     model_config = ConfigDict(
@@ -78,119 +134,164 @@ class Asset(BaseModel):
         validate_assignment=True,
     )
     
-    asset_id: str = Field(default="", description="Unique Asset ID")
+    # === Identity ===
+    asset_id: str = Field(default_factory=lambda: f"ast_{uuid.uuid4().hex[:12]}", description="Unique Asset ID")
     account_id: str = Field(..., description="Linked Account ID")
-    type: str = Field(..., description="Asset category (asset_class)")
-    ticker: str = Field(..., description="Stock ticker symbol (symbol)", min_length=1)
-    name: str = Field(default="", description="Asset Name")
-    quantity: float = Field(..., ge=0, description="Number of shares/units")
-    avg_cost: float = Field(default=0.0, ge=0, description="Average cost per share")
-    currency: Literal["USD", "TWD"] = Field(default="USD", description="Asset currency")
-    note: str = Field(default="", description="Optional notes")
-    manual_price: float = Field(default=0.0, ge=0, description="Manual price override")
-    last_update: str = Field(default="N/A", description="Last update timestamp")
-    suggested_sl: Optional[float] = Field(default=None, description="Suggested stop loss price")
-    suggested_tp: Optional[float] = Field(default=None, description="Suggested take profit price")
     
-    @field_validator('ticker')
+    # === Classification ===
+    category: str = Field(..., description="Main category (investment/cash/liability)")
+    asset_type: str = Field(..., description="Asset/investment type")
+    sub_type: Optional[str] = Field(None, description="Sub-classification")
+    
+    # === Identification ===
+    symbol: str = Field(..., description="Ticker/symbol or ID", min_length=1)
+    name: str = Field(default="", description="Asset name")
+    
+    # === Quantity & Cost ===
+    quantity: float = Field(..., ge=0, description="Quantity/amount")
+    avg_cost: float = Field(default=0.0, ge=0, description="Average cost")
+    currency: str = Field(..., description="Currency")
+    
+    # === Price ===
+    current_price: float = Field(default=0.0, ge=0, description="Current price")
+    manual_price: float = Field(default=0.0, ge=0, description="Manual price")
+    last_update: str = Field(default="N/A", description="Last update")
+    
+    # === Risk Management ===
+    suggested_sl: Optional[float] = Field(None, description="Stop loss")
+    suggested_tp: Optional[float] = Field(None, description="Take profit")
+    
+    # === Liability Specific ===
+    loan_plan_id: Optional[str] = Field(None, description="Loan plan ID")
+    
+    # === Metadata ===
+    note: str = Field(default="", description="Notes")
+    tags: List[str] = Field(default_factory=list, description="Tags")
+    created_date: str = Field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d"))
+    modified_date: str = Field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d"))
+    
+    # === Legacy Fields ===
+    type: Optional[str] = Field(None, description="Legacy type (deprecated)")
+    ticker: Optional[str] = Field(None, description="Legacy ticker (deprecated)")
+    
+    @field_validator('symbol')
     @classmethod
-    def ticker_validation(cls, v: str, info) -> str:
-        """
-        Validate and format ticker. 
-        Auto-generates ticker for Cash/Liabilities if empty.
-        """
-        # We need access to other fields (type/currency)
+    def symbol_validation(cls, v: str, info) -> str:
+        """Validate symbol with auto-generation for cash/liabilities."""
         data = info.data
-        asset_type = data.get('type')
+        category = data.get('category', '')
         
-        if asset_type in ["現金", "負債"]:
+        if category in ['cash', 'liability']:
             if not v or v.strip() == "":
-                # Auto-generate
                 currency = data.get('currency', 'TWD')
-                prefix = "CASH" if asset_type == "現金" else "DEBT"
-                # Use a simple generation strategy or just generic name
-                # Unique ID is asset_id, Ticker is display symbol.
-                # Let's use currency as ticker? Or Custom Name?
+                asset_type = data.get('asset_type', '')
+                prefix = "CASH" if category == "cash" else asset_type.upper()
                 return f"{prefix}-{currency}"
-            return v.upper()
-            
+        
         if not v or v.strip() == "":
-             raise ValueError("Ticker cannot be empty for investment assets")
-             
+            raise ValueError("Symbol cannot be empty for investment assets")
+        
         return v.upper()
     
-    @field_validator('type')
+    @field_validator('category')
     @classmethod
-    def validate_type(cls, v: str) -> str:
-        """Validate asset type against known categories."""
-        valid_types = ["美股", "台股", "虛擬貨幣", "稀有金屬", "現金", "負債"]
-        if v not in valid_types:
-            # Allow custom types but warn
-            import warnings
-            warnings.warn(f"Asset type '{v}' is not in standard types: {valid_types}")
+    def validate_category(cls, v: str) -> str:
+        """Validate category."""
+        valid = [e.value for e in AssetCategory]
+        if v not in valid:
+            raise ValueError(f"Category must be one of: {valid}")
         return v
     
     def to_dict(self) -> dict:
-        """
-        Convert to dictionary for CSV serialization.
-        
-        Returns:
-            dict: Dictionary with capitalized keys matching CSV format
-        """
+        """Convert to dictionary for Excel serialization."""
         return {
             "asset_id": self.asset_id,
             "account_id": self.account_id,
-            "asset_class": self.type,
-            "symbol": self.ticker,
+            "category": self.category,
+            "asset_type": self.asset_type,
+            "sub_type": self.sub_type or "",
+            "symbol": self.symbol,
             "name": self.name,
             "quantity": self.quantity,
-            "note": self.note,
-            # Extra fields needed for app logic but technically extensions to the user's minimal example
             "avg_cost": self.avg_cost,
             "currency": self.currency,
+            "current_price": self.current_price,
             "manual_price": self.manual_price,
             "last_update": self.last_update,
-            "suggested_sl": self.suggested_sl,
-            "suggested_tp": self.suggested_tp
+            "suggested_sl": self.suggested_sl if self.suggested_sl else "",
+            "suggested_tp": self.suggested_tp if self.suggested_tp else "",
+            "loan_plan_id": self.loan_plan_id or "",
+            "note": self.note,
+            "tags": ",".join(self.tags) if self.tags else "",
+            "created_date": self.created_date,
+            "modified_date": self.modified_date
         }
     
     @classmethod
     def from_dict(cls, data: dict) -> "Asset":
-        """
-        Create Asset from dictionary (e.g., from CSV).
+        """Create Asset with migration logic for legacy data."""
         
-        Args:
-            data: Dictionary with asset data
-            
-        Returns:
-            Asset: Validated asset instance
-        """
-        # Handle both capitalized (CSV) and lowercase (internal) keys
-        # Helper to parse optional float fields
-        def parse_optional_float(key1: str, key2: str) -> Optional[float]:
-            val = data.get(key1) or data.get(key2)
+        # Migration logic
+        category = data.get("category")
+        asset_type = data.get("asset_type") or data.get("Type") or data.get("asset_class")
+        
+        if not category and asset_type:
+            # Migrate from old format
+            category, migrated_type, sub_type = cls._migrate_legacy_type(asset_type)
+            if not data.get("asset_type"):
+                asset_type = migrated_type
+        
+        # Handle symbol/ticker
+        symbol = data.get("symbol") or data.get("Ticker") or data.get("ticker", "")
+        
+        # Parse optional floats
+        def parse_opt_float(k1: str, k2: str = "") -> Optional[float]:
+            val = data.get(k1) or (data.get(k2) if k2 else None)
             if val is None or val == "" or val == "N/A":
                 return None
             try:
                 return float(val)
-            except (ValueError, TypeError):
+            except:
                 return None
         
+        # Parse tags
+        tags_str = data.get("tags", "")
+        tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
+        
         return cls(
-            asset_id=str(data.get("asset_id") or ""),
+            asset_id=str(data.get("asset_id") or f"ast_{uuid.uuid4().hex[:12]}"),
             account_id=str(data.get("account_id") or data.get("Account_ID", "default_main")),
-            type=str(data.get("asset_class") or data.get("Type")),
-            ticker=str(data.get("symbol") or data.get("Ticker")),
+            category=category or "investment",
+            asset_type=str(asset_type or "其他"),
+            sub_type=data.get("sub_type") or None,
+            symbol=symbol,
             name=str(data.get("name", "")),
             quantity=float(data.get("quantity") or data.get("Quantity", 0)),
-            note=str(data.get("note", "")),
             avg_cost=float(data.get("avg_cost") or data.get("Avg_Cost", 0)),
             currency=data.get("currency") or data.get("Currency", "USD"),
+            current_price=float(data.get("current_price", 0)),
             manual_price=float(data.get("manual_price") or data.get("Manual_Price", 0)),
             last_update=data.get("last_update") or data.get("Last_Update", "N/A"),
-            suggested_sl=parse_optional_float("suggested_sl", "Suggested_SL"),
-            suggested_tp=parse_optional_float("suggested_tp", "Suggested_TP"),
+            suggested_sl=parse_opt_float("suggested_sl", "Suggested_SL"),
+            suggested_tp=parse_opt_float("suggested_tp", "Suggested_TP"),
+            loan_plan_id=data.get("loan_plan_id") or None,
+            note=str(data.get("note", "")),
+            tags=tags,
+            created_date=str(data.get("created_date", datetime.now().strftime("%Y-%m-%d"))),
+            modified_date=str(data.get("modified_date", datetime.now().strftime("%Y-%m-%d")))
         )
+    
+    @staticmethod
+    def _migrate_legacy_type(old_type: str) -> tuple[str, str, Optional[str]]:
+        """Migrate legacy type to (category, asset_type, sub_type)."""
+        investment_types = ["美股", "台股", "港股", "虛擬貨幣", "稀有金屬", "ETF", "債券", "基金", "REITs"]
+        if old_type in investment_types:
+            return ("investment", old_type, None)
+        if old_type == "現金":
+            return ("cash", "現金", None)
+        if old_type == "負債":
+            return ("liability", "其他負債", None)
+        return ("investment", old_type, None)
 
 
 
