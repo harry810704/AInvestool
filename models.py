@@ -264,12 +264,18 @@ class Asset(BaseModel):
                 tags_str = ""
         tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
         
+        # Helper to safely get string value, converting NaN to None or empty string
+        def safe_str(val, allow_none=False):
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                return None if allow_none else ""
+            return str(val) if val else ""
+        
         return cls(
             asset_id=str(data.get("asset_id") or f"ast_{uuid.uuid4().hex[:12]}"),
             account_id=str(data.get("account_id") or data.get("Account_ID", "default_main")),
             category=category or "investment",
             asset_type=str(asset_type or "其他"),
-            sub_type=data.get("sub_type") or None,
+            sub_type=safe_str(data.get("sub_type"), allow_none=True),
             symbol=symbol,
             name=str(data.get("name", "")),
             quantity=float(data.get("quantity") or data.get("Quantity", 0)),
@@ -277,10 +283,10 @@ class Asset(BaseModel):
             currency=data.get("currency") or data.get("Currency", "USD"),
             current_price=float(data.get("current_price", 0)),
             manual_price=float(data.get("manual_price") or data.get("Manual_Price", 0)),
-            last_update=data.get("last_update") or data.get("Last_Update", "N/A"),
+            last_update=safe_str(data.get("last_update") or data.get("Last_Update", "N/A")),
             suggested_sl=parse_opt_float("suggested_sl", "Suggested_SL"),
             suggested_tp=parse_opt_float("suggested_tp", "Suggested_TP"),
-            loan_plan_id=data.get("loan_plan_id") or None,
+            loan_plan_id=safe_str(data.get("loan_plan_id"), allow_none=True),
             note=str(data.get("note", "")),
             tags=tags,
             created_date=str(data.get("created_date", datetime.now().strftime("%Y-%m-%d"))),
