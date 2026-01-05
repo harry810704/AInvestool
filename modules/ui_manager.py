@@ -381,7 +381,7 @@ def asset_action_dialog(index, asset):
 def add_asset_dialog():
     st.caption("新增資產或負債項目")
     
-    # 1. Select Type First
+    # 1. Select Type & Account
     c_type, c_acc = st.columns(2)
     with c_type:
         atype = st.selectbox("資產類別", config.ui.asset_types)
@@ -392,34 +392,75 @@ def add_asset_dialog():
         sel_acc_name = st.selectbox("所屬帳戶", list(acc_options.keys()))
         sel_acc_id = acc_options[sel_acc_name]
 
-    # 2. Logic Split based on Type
-    is_financial = atype in ["現金", "負債"]
-    ticker = ""
+    # 2. Determine Input Mode
+    # Forced Manual types
+    manual_types = ["現金", "負債"]
+    # Forced Ticker types
+    ticker_types = ["股票", "虛擬貨幣", "ETF", "REITs"]
     
-    if is_financial:
-        # Flow for Cash/Liability
+    input_mode = "Ticker"
+    if atype in manual_types:
+        input_mode = "Manual"
+    elif atype in ticker_types:
+        input_mode = "Ticker"
+    else:
+        # Optional types (Commodity, Bond, Fund, Other)
+        input_mode = st.radio("輸入方式", ["Ticker (代號)", "Manual (手動)"], horizontal=True, label_visibility="collapsed").split(" ")[0]
+
+    # 3. Input Fields
+    ticker = ""
+    custom_name = ""
+    sub_type = None
+    
+    # Variables to collect
+    final_currency = "USD"
+    final_qty = 0.0
+    final_cost = 0.0
+    final_market_price = 0.0 # For manual
+    
+    # Loan specifics
+    create_plan = False
+    plan_rate = 0.0
+    plan_years = 0
+    plan_start = datetime.now().date()
+
+    if input_mode == "Manual":
+        # Manual Input Flow (Cash, Liability, Commodity per Ounce, etc.)
+        st.markdown("---")
+        
         c_name, c_curr = st.columns([2, 1])
         with c_name:
-            custom_name = st.text_input("項目名稱 (選填)", placeholder="例如：房貸、定存")
+            ph = "例如：房貸" if atype == "負債" else ("例如：備用金" if atype == "現金" else "例如：黃金現貨")
+            custom_name = st.text_input("項目名稱 (選填)", placeholder=ph)
         with c_curr:
-            curr = st.selectbox("幣別", ["USD", "TWD"], index=1) # Default TWD for local stuff usually
+            curr_opts = ["USD", "TWD"]
+            if atype == "現金":
+                # For cash, currency is critical
+                final_currency = st.selectbox("幣別", curr_opts, index=1)
+            else:
+                final_currency = st.selectbox("計價幣別", curr_opts, index=1)
+
+        c_qty, c_cost = st.columns(2)
+        if atype in ["現金", "負債"]:
+            # For Cash/Liability, Qty is the Amount, Cost is 1.0 (Face Value)
+            amount = c_qty.number_input("金額/餘額", min_value=0.0, value=0.0, step=1000.0)
+            final_qty = amount
+            final_cost = 1.0
+            final_market_price = 1.0
             
-        c_sub, c_dummy = st.columns([2, 1])
-        sub_type = c_sub.text_input("子類別 (選填)", placeholder="例如：活存、定存、交割款")
-            
-        c_amt, c_ph = st.columns([2, 1])
-        amount = c_amt.number_input("金額/餘額", min_value=0.0, value=0.0, step=1000.0)
-        
-        # Loan Plan Option for Liabilities
-        create_plan = False
-        plan_rate = 0.0
-        plan_years = 0
-        plan_start = datetime.now().date()
-        
+            # Sub-type
+            sub_type = st.text_input("子類別 (選填)", placeholder="例如：活存、定存")
+        else:
+            # For Manual Commodity/Other (e.g. Gold 10 Ounces)
+            final_qty = c_qty.number_input("數量 (例如盎司)", min_value=0.0, value=1.0, step=0.1)
+            final_cost = c_cost.number_input("平均成本 (單價)", min_value=0.0, value=100.0, step=10.0)
+            final_market_price = st.number_input("當前市價 (單價)", min_value=0.0, value=final_cost, step=10.0)
+            sub_type = st.text_input("單位/規格 (選填)", placeholder="例如：盎司、公克")
+
+        # Loan Plan Logic
         if atype == "負債":
             st.markdown("---")
             create_plan = st.toggle("規劃還款計劃?", value=False)
-            
             if create_plan:
                 with st.container(border=True):
                     st.caption("還款計劃設定 (本息攤還試算)")
@@ -427,107 +468,91 @@ def add_asset_dialog():
                     plan_rate = lp1.number_input("年利率 (%)", min_value=0.0, value=2.0, step=0.1)
                     plan_years = lp2.number_input("還款年限", min_value=1, value=20, step=1)
                     plan_start = lp3.date_input("開始日期", value=datetime.now())
-                    
-                    if st.button("📊 試算還款表", key="btn_calc_plan"):
-                        from modules.loan_service import calculate_amortization_schedule
-                        schedule = calculate_amortization_schedule(amount, plan_rate, plan_years * 12, str(plan_start))
-                        if schedule:
-                            first_pmt = schedule[0].payment_amount
-                            total_interest = sum(item.interest_paid for item in schedule)
-                            st.info(f"首期還款: {first_pmt:,.0f} | 總利息: {total_interest:,.0f}")
-                            
-                            # Simple chart
-                            df_sch = pd.DataFrame([s.to_dict() for s in schedule])
-                            st.line_chart(df_sch, x="payment_number", y="remaining_balance", height=200)
+                    if st.button("📊 試算"):
+                         from modules.loan_service import calculate_amortization_schedule
+                         schedule = calculate_amortization_schedule(final_qty, plan_rate, plan_years * 12, str(plan_start))
+                         if schedule:
+                             st.info(f"首期: {schedule[0].payment_amount:,.0f} | 總息: {sum(s.interest_paid for s in schedule):,.0f}")
+
     else:
-        # Flow for Investment Assets (Stocks, Crypto, etc.)
+        # Ticker Input Flow
         st.markdown("---")
         c_s, c_r = st.columns([2, 3])
         q = c_s.text_input("搜尋代號", placeholder="輸入如: TSLA, 2330...")
         sel_search = c_r.selectbox("搜尋結果", search_yahoo_ticker(q) if q else [])
-        
         auto_t = sel_search.split(" | ")[0] if sel_search else ""
         
         c1, c2, c3 = st.columns(3)
         ticker = c1.text_input("代號", value=auto_t).upper()
-        curr = c2.selectbox("幣別", ["USD", "TWD"], index=0)
-        qty = c3.number_input("持有數量", min_value=0.0, value=1.0, step=0.1)
-        
-        cost = st.number_input("平均成本 (單價)", min_value=0.0, value=100.0, step=0.1)
-        amount = 0 # Not used directly, derived from cost * qty
-        sub_type = None
+        final_currency = c2.selectbox("幣別", ["USD", "TWD"], index=0)
+        final_qty = c3.number_input("持有數量", min_value=0.0, value=1.0, step=0.1)
+        final_cost = st.number_input("平均成本 (單價)", min_value=0.0, value=100.0, step=0.1)
 
     st.markdown("---")
     if st.button("確認新增", type="primary", use_container_width=True):
         # Validation
-        if not is_financial and not ticker:
+        if input_mode == "Ticker" and not ticker:
             st.error("請輸入代號")
             return
             
         new_id = f"ast_{datetime.now().strftime('%Y%m%d%H%M%S')}"
         
-        # Prepare Asset Dict
-        # Determine category for new unified model
+        # Determine category
         cat_map = {"現金": "cash", "負債": "liability"}
         category = cat_map.get(atype, "investment")
         
+        # Symbol Generation
+        final_symbol = ""
+        final_name = ""
+        
+        if input_mode == "Manual":
+            # Auto-generate symbol for manual items to avoid collision
+            prefix = "CASH" if atype == "現金" else ("DEBT" if atype == "負債" else "MANUAL")
+            # Unique suffix
+            suffix = datetime.now().strftime("%M%S")
+            final_symbol = f"{prefix}-{final_currency}-{suffix}"
+            
+            # Name logic
+            if custom_name:
+                final_name = custom_name
+            else:
+                final_name = f"{atype} - {sel_acc_name}"
+        else:
+            final_symbol = ticker
+            final_name = "" # Will be fetched or empty
+            
         new_asset = {
             "asset_id": new_id,
-            "category": category, # Explicit category
-            "asset_class": atype, # Keep legacy for compatibility
-            "asset_type": atype,  # Unified model
-            "sub_type": sub_type, # New field
+            "category": category,
+            "asset_class": atype,
+            "asset_type": atype,
+            "sub_type": sub_type,
             "account_id": sel_acc_id,
-            "currency": curr,
-            "last_update": "N/A",
-            "manual_price": 0.0, 
+            "currency": final_currency,
+            "symbol": final_symbol,
+            "name": final_name,
+            "quantity": final_qty,
+            "avg_cost": final_cost,
+            "manual_price": final_market_price,
+            "last_update": "N/A"
         }
         
-        if is_financial:
-            # Cash/Liability Logic
-            prefix = "CASH" if atype == "現金" else "DEBT"
-            final_ticker = f"{prefix}-{curr}" 
-            
-            # Smart Name Generation
-            if custom_name:
-                 new_asset["name"] = custom_name
-            else:
-                 # Auto name: "Cash - Firstrade"
-                 acc_name_str = sel_acc_name
-                 new_asset["name"] = f"{atype} - {acc_name_str}"
-            
-            new_asset["symbol"] = final_ticker
-            new_asset["quantity"] = amount 
-            new_asset["avg_cost"] = 1.0 
-
-            
-        else:
-            # Investment Logic
-            new_asset["symbol"] = ticker
-            new_asset["quantity"] = qty
-            new_asset["avg_cost"] = cost
-            
-        # Add to portfolio
         st.session_state.portfolio.append(new_asset)
         
-        # Create Loan Plan if needed
-        if is_financial and create_plan:
+        # Create Loan Plan
+        if create_plan and atype == "負債":
             from modules.loan_service import create_loan_plan
-            
             new_plan = create_loan_plan(
                 asset_id=new_id,
-                total_amount=amount,
+                total_amount=final_qty,
                 annual_rate=plan_rate,
                 period_months=plan_years * 12,
                 start_date=str(plan_start)
             )
-            
-            # Save plan to session state -> data_loader handles saving
             if "loan_plans" not in st.session_state:
                 st.session_state.loan_plans = []
             st.session_state.loan_plans.append(new_plan.to_dict())
             
-        # Save All
         save_all_data(
             st.session_state.accounts, 
             st.session_state.portfolio, 

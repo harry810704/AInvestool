@@ -87,29 +87,27 @@ class UIConfig:
     
     # === Investment Types ===
     investment_types: List[str] = field(default_factory=lambda: [
-        "美股", "台股", "港股", "ETF", 
-        "虛擬貨幣", "債券", "基金", "REITs", "稀有金屬", "其他"
+        "股票", "虛擬貨幣", "ETF", "債券", "基金", "REITs", "商品", "其他"
     ])
     
     # === Cash Types ===
     cash_types: List[str] = field(default_factory=lambda: [
-        "現金", "活期存款", "定期存款", "貨幣市場基金"
+        "現金", "定存", "活存"
     ])
     
     # === Liability Types ===
     liability_types: List[str] = field(default_factory=lambda: [
-        "房貸", "車貸", "信貸", "學貸", "信用卡債", "其他負債"
+        "房貸", "信貸", "車貸", "信用卡", "其他負債"
     ])
     
-    # === Legacy Asset Types (backward compatibility) ===
-    asset_types: List[str] = field(default_factory=lambda: ["美股", "台股", "虛擬貨幣", "稀有金屬", "現金", "負債"])
+    # === All Asset Types (for dropdowns) ===
+    asset_types: List[str] = field(default_factory=lambda: [
+        "股票", "虛擬貨幣", "ETF", "債券", "商品", "現金", "負債", "基金", "REITs", "其他"
+    ])
     
     # Account types
     account_types: List[str] = field(default_factory=lambda: [
-        "美股券商", "台股券商", "港股券商",
-        "銀行活存", "銀行定存",
-        "信用卡", "房貸帳戶", "車貸帳戶", "信貸帳戶",
-        "加密貨幣交易所", "退休金帳戶", "其他"
+        "投資帳戶", "現金帳戶", "信用帳戶"
     ])
     
     # Currency options

@@ -63,11 +63,13 @@ class Account(BaseModel):
     @classmethod
     def validate_account_type(cls, v: str) -> str:
         """Validate account type."""
-        # Allow both enum values and legacy types
-        valid_types = [e.value for e in AccountType] + ["現金帳戶", "投資帳戶", "信用帳戶"]
-        if v not in valid_types:
-            import warnings
-            warnings.warn(f"Account type '{v}' is not in standard types")
+        # Allow new standard types and legacy types
+        standard_types = ["投資帳戶", "現金帳戶", "信用帳戶"]
+        legacy_types = [e.value for e in AccountType] + ["美股券商", "台股券商", "各類詳細帳戶"] # Broaden for backward compat
+        
+        if v not in standard_types and v not in legacy_types:
+            # Just log warning or allow it (dynamic is better for users)
+            pass
         return v
     
     def to_dict(self) -> dict:
