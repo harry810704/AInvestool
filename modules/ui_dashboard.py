@@ -468,6 +468,7 @@ def render_category_overview(df_all: pd.DataFrame, total_val: float, c_symbol: s
     # Group by Type and calculate metrics
     df_grouped = df_all.groupby('Type').agg({
         'Net_Value': 'sum',
+        'Market_Value': 'sum',
         'Total_Cost': 'sum',
         'Unrealized_PL': 'sum'
     }).reset_index()
