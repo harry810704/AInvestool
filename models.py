@@ -246,6 +246,17 @@ class Asset(BaseModel):
         # Handle symbol/ticker
         symbol = data.get("symbol") or data.get("Ticker") or data.get("ticker", "")
         
+        # Handle account_id with robust fallback
+        raw_acc_id = data.get("account_id")
+        if raw_acc_id is None or (isinstance(raw_acc_id, float) and pd.isna(raw_acc_id)) or str(raw_acc_id).strip() == "":
+            raw_acc_id = data.get("Account_ID")
+            
+        if raw_acc_id is None or (isinstance(raw_acc_id, float) and pd.isna(raw_acc_id)) or str(raw_acc_id).strip() == "":
+            final_acc_id = "default_main"
+        else:
+            final_acc_id = str(raw_acc_id)
+            if final_acc_id == "nan": final_acc_id = "default_main"
+        
         # Parse optional floats
         def parse_opt_float(k1: str, k2: str = "") -> Optional[float]:
             val = data.get(k1) or (data.get(k2) if k2 else None)
@@ -259,14 +270,13 @@ class Asset(BaseModel):
         # Parse tags - handle both string and non-string values
         tags_str = data.get("tags", "")
         if tags_str and not isinstance(tags_str, str):
-            # Handle NaN or numeric values from Excel
             try:
                 tags_str = str(tags_str) if str(tags_str) != "nan" else ""
             except:
                 tags_str = ""
         tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
         
-        # Helper to safely get string value, converting NaN to None or empty string
+        # Helper to safely get string value
         def safe_str(val, allow_none=False):
             if val is None or (isinstance(val, float) and pd.isna(val)):
                 return None if allow_none else ""
@@ -274,7 +284,7 @@ class Asset(BaseModel):
         
         return cls(
             asset_id=str(data.get("asset_id") or f"ast_{uuid.uuid4().hex[:12]}"),
-            account_id=str(data.get("account_id") or data.get("Account_ID", "default_main")),
+            account_id=final_acc_id,
             category=category or "investment",
             asset_type=str(asset_type or "其他"),
             sub_type=safe_str(data.get("sub_type"), allow_none=True),
