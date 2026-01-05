@@ -28,13 +28,21 @@ def render_account_manager():
     if accounts:
         st.markdown("### 現有帳戶")
         for i, acc in enumerate(accounts):
-            with st.expander(f"📁 {acc['name']} ({acc['type']})", expanded=False):
+            # Get account_type with backward compatibility
+            acc_type = acc.get('account_type') or acc.get('type', '其他')
+            with st.expander(f"📁 {acc['name']} ({acc_type})", expanded=False):
                 c1, c2 = st.columns(2)
                 new_name = c1.text_input("帳戶名稱", acc['name'], key=f"acc_name_{i}")
+                # Get current type with backward compatibility
+                current_type = acc.get('account_type') or acc.get('type', '其他')
+                try:
+                    type_idx = config.ui.account_types.index(current_type)
+                except ValueError:
+                    type_idx = 0
                 new_type = c2.selectbox(
                     "帳戶類型", 
                     config.ui.account_types, 
-                    index=config.ui.account_types.index(acc['type']) if acc['type'] in config.ui.account_types else 0, 
+                    index=type_idx, 
                     key=f"acc_type_{i}"
                 )
                 
@@ -43,7 +51,8 @@ def render_account_manager():
                 with col_btn1:
                     if st.button("✅ 更新", key=f"acc_upd_{i}", use_container_width=True):
                         acc['name'] = new_name
-                        acc['type'] = new_type
+                        acc['account_type'] = new_type
+                        acc['type'] = new_type  # Legacy compatibility
                         save_all_data(
                             st.session_state.accounts, 
                             st.session_state.portfolio, 
@@ -79,12 +88,18 @@ def render_account_manager():
         
         if st.form_submit_button("新增帳戶", type="primary", use_container_width=True):
             if n_name:
+                from datetime import datetime
+                new_id = f"acc_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                 new_acc = {
-                    "id": str(uuid.uuid4()),
-                    "account_id": str(uuid.uuid4()),  # Add this for consistency
+                    "id": new_id,
+                    "account_id": new_id,
                     "name": n_name,
-                    "type": n_type,
-                    "currency": n_curr
+                    "account_type": n_type,
+                    "type": n_type,  # Legacy compatibility
+                    "base_currency": n_curr,
+                    "currency": n_curr,  # Legacy compatibility
+                    "is_active": True,
+                    "created_date": datetime.now().strftime("%Y-%m-%d")
                 }
                 st.session_state.accounts.append(new_acc)
                 save_all_data(
