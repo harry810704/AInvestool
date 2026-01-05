@@ -151,6 +151,7 @@ def render_account_breakdown(df_all: pd.DataFrame, c_symbol: str) -> None:
     # Group by account
     account_totals = df_all.groupby("Account_ID").agg({
         "Net_Value": "sum",
+        "Market_Value": "sum",
         "Total_Cost": "sum",
         "Unrealized_PL": "sum"
     }).reset_index()
