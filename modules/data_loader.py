@@ -290,19 +290,20 @@ def save_all_data(
         loan_plans: List[dict]
     """
     # 1. Prepare DataFrames
+    # NOTE: Directly use dict data to avoid re-serialization that can reset fields like account_id
     
-    # Accounts
-    df_acc = pd.DataFrame([Account.from_dict(a).to_dict() for a in accounts])
+    # Accounts - use existing dicts directly
+    df_acc = pd.DataFrame(accounts) if accounts else pd.DataFrame()
     
-    # Assets
-    df_ast = pd.DataFrame([Asset.from_dict(a).to_dict() for a in assets])
+    # Assets - use existing dicts directly to preserve account_id
+    df_ast = pd.DataFrame(assets) if assets else pd.DataFrame()
     
     # Settings (Convert dict back to list)
     settings_list = [{"asset_class": k, "target_percentage": v} for k, v in settings.items()]
     df_set = pd.DataFrame(settings_list)
     
-    # History
-    df_hist = pd.DataFrame([HistoryRecord.from_dict(h).to_dict() for h in history])
+    # History - use existing dicts directly
+    df_hist = pd.DataFrame(history) if history else pd.DataFrame()
     
     # Loans
     # Flatten structure if needed? Or just save the raw dicts if simple
