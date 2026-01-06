@@ -74,12 +74,15 @@ def asset_action_dialog(index, asset):
                 new_avg = (
                     (old_cost + (add_qty * add_price)) / new_qty if new_qty else 0
                 )
-                asset["avg_cost"] = new_avg
-                asset["quantity"] = new_qty
+                # Modify the original asset in session_state.portfolio
+                st.session_state.portfolio[index]["avg_cost"] = new_avg
+                st.session_state.portfolio[index]["quantity"] = new_qty
                 
                 # Update legacy keys if they exist
-                if "Avg_Cost" in asset: asset["Avg_Cost"] = new_avg
-                if "Quantity" in asset: asset["Quantity"] = new_qty
+                if "Avg_Cost" in st.session_state.portfolio[index]:
+                    st.session_state.portfolio[index]["Avg_Cost"] = new_avg
+                if "Quantity" in st.session_state.portfolio[index]:
+                    st.session_state.portfolio[index]["Quantity"] = new_qty
                 
                 save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
                 st.session_state["force_refresh_market_data"] = True
@@ -101,10 +104,13 @@ def asset_action_dialog(index, asset):
 
         if st.button("確認減倉", key=f"btn_sell_{index}", type="primary", use_container_width=True):
             if sell_qty > 0:
-                asset["quantity"] = qty - sell_qty
-                if asset["quantity"] < 0: asset["quantity"] = 0
+                # Modify the original asset in session_state.portfolio
+                st.session_state.portfolio[index]["quantity"] = qty - sell_qty
+                if st.session_state.portfolio[index]["quantity"] < 0:
+                    st.session_state.portfolio[index]["quantity"] = 0
                 
-                if "Quantity" in asset: asset["Quantity"] = asset["quantity"]
+                if "Quantity" in st.session_state.portfolio[index]:
+                    st.session_state.portfolio[index]["Quantity"] = st.session_state.portfolio[index]["quantity"]
                 
                 save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
                 st.session_state["force_refresh_market_data"] = True
@@ -138,13 +144,17 @@ def asset_action_dialog(index, asset):
         sel_acc_name = st.selectbox("所屬帳戶", acc_names, index=default_acc_index, key=f"acc_edit_{index}")
 
         if st.button("保存修正", key=f"btn_fix_{index}", use_container_width=True):
-            asset["quantity"] = fq
-            asset["avg_cost"] = fc
-            asset["account_id"] = acc_options[sel_acc_name]
+            # Modify the original asset in session_state.portfolio
+            st.session_state.portfolio[index]["quantity"] = fq
+            st.session_state.portfolio[index]["avg_cost"] = fc
+            st.session_state.portfolio[index]["account_id"] = acc_options[sel_acc_name]
             
-            if "Quantity" in asset: asset["Quantity"] = fq
-            if "Avg_Cost" in asset: asset["Avg_Cost"] = fc
-            if "Account_ID" in asset: asset["Account_ID"] = asset["account_id"]
+            if "Quantity" in st.session_state.portfolio[index]:
+                st.session_state.portfolio[index]["Quantity"] = fq
+            if "Avg_Cost" in st.session_state.portfolio[index]:
+                st.session_state.portfolio[index]["Avg_Cost"] = fc
+            if "Account_ID" in st.session_state.portfolio[index]:
+                st.session_state.portfolio[index]["Account_ID"] = st.session_state.portfolio[index]["account_id"]
             
             save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
             st.session_state["force_refresh_market_data"] = True
@@ -155,9 +165,12 @@ def asset_action_dialog(index, asset):
         st.markdown("#### 無損移轉 (不影響損益)")
         st.caption("將資產移動至另一個帳戶，例如：從主要帳戶移動至美股帳戶。")
         
+        # IMPORTANT: Access portfolio directly to ensure modifications persist
+        current_asset = st.session_state.portfolio[index]
+        
         accounts = st.session_state.get("accounts", [])
         acc_options = {acc["name"]: str(acc.get("account_id") or acc.get("id")) for acc in accounts} if accounts else {"主要帳戶": "default_main"}
-        curr_acc_id = asset.get("account_id") or asset.get("Account_ID", "default_main")
+        curr_acc_id = current_asset.get("account_id") or current_asset.get("Account_ID", "default_main")
         
         target_acc_names = [name for name, aid in acc_options.items() if aid != curr_acc_id]
         
@@ -168,8 +181,10 @@ def asset_action_dialog(index, asset):
             
             if st.button("確認移轉", key=f"btn_move_{index}", type="primary", use_container_width=True):
                 target_id = acc_options[target_name]
-                asset["account_id"] = target_id
-                if "Account_ID" in asset: asset["Account_ID"] = target_id
+                # Modify the original asset in session_state.portfolio
+                st.session_state.portfolio[index]["account_id"] = target_id
+                if "Account_ID" in st.session_state.portfolio[index]:
+                    st.session_state.portfolio[index]["Account_ID"] = target_id
                 
                 save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
                 st.session_state["force_refresh_market_data"] = True
@@ -279,10 +294,13 @@ def asset_action_dialog(index, asset):
             st.divider()
             
             if st.button("💾 應用建議並儲存", key=f"save_risk_{index}", type="primary"):
-                asset["suggested_sl"] = result['sl_price']
-                asset["suggested_tp"] = result['tp_price']
-                if "Suggested_SL" in asset: asset["Suggested_SL"] = result['sl_price']
-                if "Suggested_TP" in asset: asset["Suggested_TP"] = result['tp_price']
+                # Modify the original asset in session_state.portfolio
+                st.session_state.portfolio[index]["suggested_sl"] = result['sl_price']
+                st.session_state.portfolio[index]["suggested_tp"] = result['tp_price']
+                if "Suggested_SL" in st.session_state.portfolio[index]:
+                    st.session_state.portfolio[index]["Suggested_SL"] = result['sl_price']
+                if "Suggested_TP" in st.session_state.portfolio[index]:
+                    st.session_state.portfolio[index]["Suggested_TP"] = result['tp_price']
                 
                 save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
                 st.success(f"✅ 已儲存 {ticker} 的停損停利建議！")

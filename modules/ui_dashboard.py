@@ -13,8 +13,10 @@ from typing import Optional
 
 from config import get_config
 from modules.data_loader import save_snapshot
+from modules.logger import get_logger
 
 config = get_config()
+logger = get_logger(__name__)
 
 
 def render_asset_liability_ratio(df_all: pd.DataFrame, assets_val: float, liabilities_val: float, c_symbol: str) -> None:
@@ -298,17 +300,39 @@ def render_dashboard(df_all: pd.DataFrame, c_symbol: str, total_val: float, exch
     # For KPIs, we use the Base Currency (total_val is already Net Worth in Base)
     # But we might want to separate Assets and Liabilities
     
-    # Calculate Total Assets (Positive Net Value) and Total Liabilities (Negative Net Value) (approx)
-    # Use Category if available, else fallback to Type
-    if "Category" in df_all.columns:
-        assets_val = df_all[df_all['Category'] != 'liability']['Market_Value'].sum()
-        liabilities_val = df_all[df_all['Category'] == 'liability']['Market_Value'].sum()
-        g_cost = df_all[df_all['Category'] != 'liability']['Total_Cost'].sum()
+    # Calculate Total Assets (Positive Net Value) and Total Liabilities (Negative Net Value)
+    # Use Category field (more reliable for new data model), with fallback to Type field
+    
+    # Method 1: Try to use Category field if available
+    if "Category" in df_all.columns and df_all["Category"].notna().any():
+        logger.debug("Using Category field for asset/liability separation")
+        assets_mask = df_all['Category'] != 'liability'
+        liabilities_mask = df_all['Category'] == 'liability'
+        assets_val = df_all[assets_mask]['Market_Value'].sum()
+        liabilities_val = df_all[liabilities_mask]['Market_Value'].sum()
+        g_cost = df_all[assets_mask]['Total_Cost'].sum()
     else:
-        # Fallback
-        assets_val = df_all[df_all['Type'] != '負債']['Market_Value'].sum()
-        liabilities_val = df_all[df_all['Type'] == '負債']['Market_Value'].sum()
-        g_cost = df_all[df_all['Type'] != '負債']['Total_Cost'].sum()
+        # Method 2: Fallback to Type/asset_type/asset_class fields
+        logger.debug("Using Type/asset_type/asset_class fields for asset/liability separation")
+        
+        # Create liability mask checking multiple possible field names
+        liabilities_mask = pd.Series([False] * len(df_all), index=df_all.index)
+        
+        # Check all possible field names for liability markers
+        if 'Type' in df_all.columns:
+            liabilities_mask |= (df_all['Type'] == '負債')
+        if 'asset_type' in df_all.columns:
+            liabilities_mask |= (df_all['asset_type'] == '負債')
+        if 'asset_class' in df_all.columns:
+            liabilities_mask |= (df_all['asset_class'] == '負債')
+        
+        assets_mask = ~liabilities_mask
+        
+        assets_val = df_all[assets_mask]['Market_Value'].sum()
+        liabilities_val = df_all[liabilities_mask]['Market_Value'].sum()
+        g_cost = df_all[assets_mask]['Total_Cost'].sum()
+    
+    logger.info(f"Dashboard KPI: Assets={assets_val:,.0f}, Liabilities={liabilities_val:,.0f}")
     
     g_pl = df_all['Unrealized_PL'].sum() # PL of Assets + PL of Liabilities
     g_roi = (g_pl / g_cost) * 100 if g_cost > 0 else 0
