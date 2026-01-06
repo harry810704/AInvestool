@@ -231,7 +231,7 @@ class Asset(BaseModel):
     
     @classmethod
     def from_dict(cls, data: dict) -> "Asset":
-        """Create Asset with migration logic for legacy data."""
+        """Create Asset with migration logic for legacy data and validation."""
         
         # Migration logic
         category = data.get("category")
@@ -243,11 +243,15 @@ class Asset(BaseModel):
             if not data.get("asset_type"):
                 asset_type = migrated_type
         
+        # Default category if still missing
+        if not category:
+            category = "investment"
+        
         # Handle symbol/ticker
         symbol = data.get("symbol") or data.get("Ticker") or data.get("ticker", "")
         
         # Robust Account ID Search
-        final_acc_id = "default_main"
+        final_acc_id = None
         
         # 1. Try explicit keys first for speed
         candidates = ["account_id", "Account_ID", "AccountID", "accountid"]
@@ -291,6 +295,24 @@ class Asset(BaseModel):
             except:
                 return None
         
+        # Helper to safely parse float with validation
+        def parse_float(k1: str, k2: str = "", default=None, field_name: str = ""):
+            val = data.get(k1)
+            if val is None and k2:
+                val = data.get(k2)
+            
+            # Check for empty/missing values
+            if val is None or val == "" or (isinstance(val, float) and pd.isna(val)):
+                if default is None:
+                    # This is a required field
+                    raise ValueError(f"缺少必要欄位: {field_name or k1}")
+                return default
+            
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                raise ValueError(f"欄位 {field_name or k1} 的值無效: '{val}'")
+        
         # Parse tags - handle both string and non-string values
         tags_str = data.get("tags", "")
         if tags_str and not isinstance(tags_str, str):
@@ -306,16 +328,51 @@ class Asset(BaseModel):
                 return None if allow_none else ""
             return str(val) if val else ""
         
+        # ========== VALIDATION FOR INVESTMENT ASSETS ==========
+        # For investment assets, validate required fields
+        is_investment = category in ["investment"]
+        
+        if is_investment:
+            # Validate symbol (required for investments)
+            if not symbol or symbol.strip() == "":
+                raise ValueError(f"投資資產缺少代號 (symbol/ticker)")
+            
+            # Validate account_id (required)
+            if not final_acc_id:
+                raise ValueError(f"資產 {symbol} 缺少所屬帳戶 (account_id) - 請在 Excel 中補齊此欄位")
+            
+            # Parse quantity - required, can be 0 but must be present
+            quantity = parse_float("quantity", "Quantity", default=None, field_name="持倉數量 (quantity)")
+            
+            # Parse avg_cost - warn if missing but allow 0
+            avg_cost_raw = data.get("avg_cost") or data.get("Avg_Cost")
+            if avg_cost_raw is None or avg_cost_raw == "" or (isinstance(avg_cost_raw, float) and pd.isna(avg_cost_raw)):
+                # Allow 0 as default but log warning
+                avg_cost = 0.0
+            else:
+                try:
+                    avg_cost = float(avg_cost_raw)
+                except (ValueError, TypeError):
+                    raise ValueError(f"資產 {symbol} 的平均成本 (avg_cost) 無效: '{avg_cost_raw}'")
+        else:
+            # For cash/liability, be more lenient
+            quantity = parse_float("quantity", "Quantity", default=0.0, field_name="")
+            avg_cost = parse_float("avg_cost", "Avg_Cost", default=1.0, field_name="")
+            
+            # Use default account if not provided
+            if not final_acc_id:
+                final_acc_id = "default_main"
+        
         return cls(
             asset_id=str(data.get("asset_id") or f"ast_{uuid.uuid4().hex[:12]}"),
             account_id=final_acc_id,
-            category=category or "investment",
+            category=category,
             asset_type=str(asset_type or "其他"),
             sub_type=safe_str(data.get("sub_type"), allow_none=True),
             symbol=symbol,
             name=str(data.get("name", "")),
-            quantity=float(data.get("quantity") or data.get("Quantity", 0)),
-            avg_cost=float(data.get("avg_cost") or data.get("Avg_Cost", 0)),
+            quantity=quantity,
+            avg_cost=avg_cost,
             currency=data.get("currency") or data.get("Currency", "USD"),
             current_price=float(data.get("current_price", 0)),
             manual_price=float(data.get("manual_price") or data.get("Manual_Price", 0)),

@@ -149,12 +149,11 @@ def asset_action_dialog(index, asset):
             st.session_state.portfolio[index]["avg_cost"] = fc
             st.session_state.portfolio[index]["account_id"] = acc_options[sel_acc_name]
             
-            if "Quantity" in st.session_state.portfolio[index]:
-                st.session_state.portfolio[index]["Quantity"] = fq
-            if "Avg_Cost" in st.session_state.portfolio[index]:
-                st.session_state.portfolio[index]["Avg_Cost"] = fc
-            if "Account_ID" in st.session_state.portfolio[index]:
-                st.session_state.portfolio[index]["Account_ID"] = st.session_state.portfolio[index]["account_id"]
+            # Remove legacy fields to ensure clean data
+            legacy_fields = ["Quantity", "Avg_Cost", "Account_ID"]
+            for field in legacy_fields:
+                if field in st.session_state.portfolio[index]:
+                    del st.session_state.portfolio[index][field]
             
             save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
             st.session_state["force_refresh_market_data"] = True
@@ -181,10 +180,19 @@ def asset_action_dialog(index, asset):
             
             if st.button("確認移轉", key=f"btn_move_{index}", type="primary", use_container_width=True):
                 target_id = acc_options[target_name]
-                # Modify the original asset in session_state.portfolio
+                
+                # Update account_id and remove legacy fields to prevent conflicts
                 st.session_state.portfolio[index]["account_id"] = target_id
+                
+                # Remove legacy field to ensure clean data
                 if "Account_ID" in st.session_state.portfolio[index]:
-                    st.session_state.portfolio[index]["Account_ID"] = target_id
+                    del st.session_state.portfolio[index]["Account_ID"]
+                
+                # Debug logging
+                from modules.logger import get_logger
+                logger = get_logger(__name__)
+                asset_symbol = st.session_state.portfolio[index].get("symbol", "Unknown")
+                logger.info(f"Asset {asset_symbol} transferred from account to {target_id}")
                 
                 save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
                 st.session_state["force_refresh_market_data"] = True
@@ -648,7 +656,7 @@ def render_asset_list_section(df_market_data, c_symbol):
                 asset["asset_type"] = new_type
                 asset["asset_class"] = new_type  # Keep legacy field
                 if "Type" in asset:
-                    asset["Type"] = new_type
+                    del asset["Type"]  # Clean up legacy field
                 c4 = True
             
             c5 = False
@@ -658,8 +666,18 @@ def render_asset_list_section(df_market_data, c_symbol):
                 old_acc_id = asset.get("account_id") or asset.get("Account_ID", "default_main")
                 if new_acc_id != old_acc_id:
                     asset["account_id"] = new_acc_id
-                    if "Account_ID" in asset: asset["Account_ID"] = new_acc_id
+                    # Clean legacy field
+                    if "Account_ID" in asset:
+                        del asset["Account_ID"]
                     c5 = True
+            
+            # Clean up legacy fields if any change was made
+            if c1 or c2 or c3:
+                # Remove legacy quantity/avg_cost/symbol fields
+                legacy_to_clean = ["Quantity", "Avg_Cost", "Ticker"]
+                for lf in legacy_to_clean:
+                    if lf in asset:
+                        del asset[lf]
             
             if c1 or c2 or c3 or c4 or c5:
                 changes_detected = True

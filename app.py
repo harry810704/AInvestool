@@ -218,6 +218,24 @@ if not state.load_portfolio:
     # Force market data refresh when portfolio is loaded
     st.session_state["force_refresh_market_data"] = True
 
+# Display data validation errors if any
+if "data_validation_errors" in st.session_state and st.session_state.data_validation_errors:
+    errors = st.session_state.data_validation_errors
+    with st.expander(f"⚠️ 發現 {len(errors)} 筆資料問題，請修正 Excel 檔案", expanded=True):
+        st.warning("以下資產資料有缺失或錯誤，已跳過載入。請修正 Excel 檔案後重新啟動應用程式。")
+        
+        for err in errors:
+            st.error(f"""
+            **Excel 第 {err['row']} 列**  
+            **資產代號:** {err['symbol']}  
+            **錯誤:** {err['error']}
+            """)
+        
+        st.info("💡 **常見問題:**\n- 投資資產缺少 `account_id` (所屬帳戶)\n- 投資資產缺少 `symbol` (代號)\n- 投資資產缺少 `quantity` (持倉數量)")
+    
+    # Clear errors after display (only show once)
+    del st.session_state.data_validation_errors
+
 # Sidebar
 with st.sidebar:
     if config.dev_mode:

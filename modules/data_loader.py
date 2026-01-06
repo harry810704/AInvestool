@@ -233,11 +233,25 @@ def load_all_data() -> Tuple[List[dict], List[dict], Dict[str, float], List[dict
 
     # Assets
     assets = []
+    validation_errors = []  # Collect validation errors for user notification
     if SHEET_ASSETS in dfs and not dfs[SHEET_ASSETS].empty:
-        for item in dfs[SHEET_ASSETS].to_dict('records'):
+        for idx, item in enumerate(dfs[SHEET_ASSETS].to_dict('records')):
             try:
                 assets.append(Asset.from_dict(item).to_dict())
-            except Exception as e: logger.warning(f"Invalid asset: {e}")
+            except ValueError as e:
+                # Validation error - collect details for user
+                validation_errors.append({
+                    "row": idx + 2,  # Excel row (header = 1, data starts at 2)
+                    "symbol": item.get("symbol") or item.get("Ticker") or item.get("ticker", "未知"),
+                    "error": str(e)
+                })
+                logger.warning(f"資產驗證失敗 (第 {idx + 2} 列): {e}")
+            except Exception as e:
+                logger.warning(f"Invalid asset at row {idx + 2}: {e}")
+    
+    # Store validation errors in session state for UI display
+    if validation_errors:
+        st.session_state["data_validation_errors"] = validation_errors
 
     # Settings
     settings_dict = {}
@@ -290,13 +304,28 @@ def save_all_data(
         loan_plans: List[dict]
     """
     # 1. Prepare DataFrames
-    # NOTE: Directly use dict data to avoid re-serialization that can reset fields like account_id
+    # NOTE: Clean legacy fields to avoid conflicts when saving/loading
     
     # Accounts - use existing dicts directly
     df_acc = pd.DataFrame(accounts) if accounts else pd.DataFrame()
     
-    # Assets - use existing dicts directly to preserve account_id
-    df_ast = pd.DataFrame(assets) if assets else pd.DataFrame()
+    # Assets - Clean legacy fields to prevent conflicts
+    # Only save standardized field names (account_id, symbol, quantity, avg_cost, etc.)
+    clean_assets = []
+    legacy_fields_to_remove = [
+        "Account_ID", "Ticker", "Type", "Quantity", "Avg_Cost", 
+        "Manual_Price", "Suggested_SL", "Suggested_TP", "Last_Update"
+    ]
+    
+    for asset in assets:
+        cleaned = asset.copy()
+        # Remove legacy field names
+        for field in legacy_fields_to_remove:
+            if field in cleaned:
+                del cleaned[field]
+        clean_assets.append(cleaned)
+    
+    df_ast = pd.DataFrame(clean_assets) if clean_assets else pd.DataFrame()
     
     # Settings (Convert dict back to list)
     settings_list = [{"asset_class": k, "target_percentage": v} for k, v in settings.items()]
