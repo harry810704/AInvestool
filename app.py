@@ -28,9 +28,10 @@ from modules.market_service import (
 from modules.ui_dashboard import render_dashboard
 from modules.ui_asset_management import render_asset_management
 from modules.ui_settings import render_settings
-from modules.ui_tools import render_tools
+from modules.ui_analytics import render_analytics
 from modules.state_manager import get_state_manager
 from modules.logger import get_logger
+from modules.style import apply_tech_theme
 from config import get_config
 
 # Initialize configuration and logger
@@ -208,6 +209,28 @@ if not state.load_portfolio:
     with st.spinner("正在讀取資料..."):
         accounts, assets, settings, history, loan_plans = load_all_data()
         
+        # If no assets found in dev mode, create default
+        if not assets and config.dev_mode:
+            logger.info("No local portfolio found, creating default")
+            from models import Asset
+            default_asset = {
+                "category": "investment",
+                "asset_type": "美股",
+                "symbol": "AAPL",
+                "name": "Apple Inc.",
+                "quantity": 10.0,
+                "avg_cost": 150.0,
+                "currency": "USD",
+                "current_price": 175.0,
+                "account_id": "default_main"
+            }
+            try:
+                assets = [Asset.from_dict(default_asset).to_dict()]
+                # Also save it so next time it's there
+                save_all_data(accounts, assets, settings, history, loan_plans)
+            except Exception as e:
+                logger.error(f"Failed to create default asset: {e}")
+
         state.accounts = accounts
         state.portfolio = assets
         state.allocation_targets = settings
@@ -290,219 +313,14 @@ if state.portfolio and not state.has_auto_updated: # Changed from 'portfolio' in
 
 logger.info("Application started")
 
-# Inject Global Custom CSS - Dark Theme
-st.markdown("""
-<style>
-    /* Card Styling - Dark Theme */
-    div[data-testid="stMetric"], div.css-card {
-        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-        border: 1px solid #475569;
-        padding: 18px;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        transition: all 0.3s ease;
-        color: #f1f5f9;
-    }
-    div[data-testid="stMetric"]:hover, div.css-card:hover {
-        box-shadow: 0 8px 20px rgba(0,0,0,0.4);
-        transform: translateY(-2px);
-        border-color: #64748b;
-    }
-    
-    /* Metric labels - ensure visibility */
-    div[data-testid="stMetric"] label {
-        color: #cbd5e1 !important;
-        font-weight: 600;
-    }
-    
-    /* Metric values - ensure visibility */
-    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
-        color: #f1f5f9 !important;
-        font-weight: 700;
-    }
-
-    /* Table Styling - Dark Theme */
-    div[data-testid="stDataFrame"] {
-        border: 1px solid #475569;
-        border-radius: 12px;
-        padding: 8px;
-        background-color: #1e293b;
-    }
-
-    /* Tabs - Dark Theme */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 20px;
-        background-color: transparent;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: #1e293b;
-        border-radius: 8px 8px 0 0;
-        font-size: 16px;
-        font-weight: 600;
-        color: #94a3b8;
-        border: 1px solid #334155;
-    }
-    .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #334155 0%, #475569 100%);
-        border-bottom: 3px solid #60a5fa;
-        color: #f1f5f9;
-    }
-
-    /* Button Styling - Enhanced */
-    button[kind="primary"] {
-        background: linear-gradient(135deg, #5D69B1 0%, #4A569D 100%);
-        border-color: #5D69B1;
-        color: white;
-        font-weight: 600;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(93, 105, 177, 0.3);
-        transition: all 0.3s ease;
-    }
-    button[kind="primary"]:hover {
-        background: linear-gradient(135deg, #4A569D 0%, #3d4a82 100%);
-        border-color: #4A569D;
-        box-shadow: 0 4px 12px rgba(93, 105, 177, 0.5);
-        transform: translateY(-1px);
-    }
-    
-    /* General text colors for dark theme */
-    .css-card div {
-        color: #e2e8f0;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Inject Global Custom CSS - Tech Theme
+apply_tech_theme()
 
 
 
 # ==========================================
 # Main Application Logic
 # ==========================================
-
-
-
-# Load portfolio data
-if not state.load_portfolio and not state.portfolio:
-    if config.dev_mode:
-        # In dev mode, check Excel first then CSV
-        logger.info("DEV_MODE: Loading portfolio from local file")
-        import os
-        
-        # We should really use data_loader logic even in dev mode to ensure consistency
-        # But data_loader.load_portfolio is tied to Google Drive Service
-        # For now, let's replicate the logic locally or patch it
-
-        portfolio = []
-        loaded = False
-
-        # Custom Dev Mode Loader: Load newest of xlsx or csv
-        xl_path = config.google_drive.portfolio_filename
-        csv_path = config.google_drive.legacy_portfolio_filename # or "my_portfolio.csv"
-        
-        load_xlsx = False
-        load_csv = False
-        
-        # Check existence
-        has_xl = os.path.exists(xl_path)
-        has_csv = os.path.exists(csv_path)
-        
-        target_file = None
-        
-        if has_xl and has_csv:
-            # Compare modification time
-            if os.path.getmtime(xl_path) >= os.path.getmtime(csv_path):
-                target_file = "xlsx"
-            else:
-                target_file = "csv"
-        elif has_xl:
-            target_file = "xlsx"
-        elif has_csv:
-            target_file = "csv"
-            
-        # Load based on target
-        if target_file == "xlsx":
-            try:
-                df = pd.read_excel(xl_path)
-                portfolio = df.to_dict('records')
-                loaded = True
-                logger.info(f"Loaded {len(portfolio)} assets from local Excel ({xl_path})")
-            except Exception as e:
-                logger.error(f"Failed to load local Excel: {e}")
-                # Fallback to csv if exists?
-                if has_csv: target_file = "csv"
-
-        if target_file == "csv" or (not loaded and has_csv):
-            try:
-                df = pd.read_csv(csv_path)
-                portfolio = df.to_dict('records')
-                loaded = True
-                logger.info(f"Loaded {len(portfolio)} assets from local CSV ({csv_path})")
-            except Exception as e:
-                logger.error(f"Failed to load local CSV: {e}")
-
-        if not loaded:
-            logger.info("No local portfolio found, creating default")
-            portfolio = [{
-                "asset_class": "美股",
-                "symbol": "AAPL",
-                "quantity": 10,
-                "avg_cost": 150.0,
-                "currency": "USD",
-                "manual_price": 0.0,
-                "last_update": "N/A",
-                "account_id": "default_main"
-            }]
-        
-        # Normalize keys/data (important for dev mode to match prod behavior)
-        # This handles missing Account_ID etc.
-        from models import Asset
-        normalized_portfolio = []
-        for item in portfolio:
-            try:
-                asset = Asset.from_dict(item)
-                if not asset.account_id:
-                    asset.account_id = "default_main"
-                normalized_portfolio.append(asset.to_dict())
-            except Exception as e:
-                logger.warning(f"Skipping invalid asset in dev mode: {e}")
-
-        state.portfolio = normalized_portfolio
-
-        # Load allocation settings from local file or use defaults
-        state.allocation_targets = config.allocation.targets.copy()
-
-        # Load local accounts if possible, else default
-        st.session_state.accounts = load_accounts() # data_loader handles local fallback
-    else:
-        # Production mode: load from Google Drive
-        logger.info("Loading portfolio from Google Drive")
-        with st.spinner("正在從 Google Drive 同步資料..."):
-            portfolio = load_portfolio()
-            logger.info("Loading allocation settings")
-            state.allocation_targets = load_allocation_settings()
-            if not portfolio:
-                logger.info("No portfolio found, creating default")
-                portfolio = [{
-                    "asset_class": "美股",
-                    "symbol": "AAPL",
-                    "quantity": 10,
-                    "avg_cost": 150.0,
-                    "currency": "USD",
-                    "manual_price": 0.0,
-                    "last_update": "N/A",
-                    "account_id": "default_main"
-                }]
-                save_portfolio(portfolio)
-            state.portfolio = portfolio
-            
-            # Load accounts
-            logger.info("Loading accounts")
-            st.session_state.accounts = load_accounts()
-            
-    state.load_portfolio = True
-    # Force market data refresh when portfolio is loaded
-    st.session_state["force_refresh_market_data"] = True
 
 # Main UI
 current_usd_twd = get_exchange_rate()
@@ -568,12 +386,12 @@ else:
         total_val = st.session_state.get("last_total_val", 0)
 
 
-# Render tabs - NEW 4-TAB STRUCTURE
+# Render tabs
 tab1, tab2, tab3, tab4 = st.tabs([
-    "📊 儀表板", 
-    "💼 資產管理", 
-    "⚙️ 管理設定", 
-    "🛠️ 輔助工具"
+    "📊 Dashboard",
+    "💼 Assets",
+    "📈 Analytics",
+    "⚙️ Settings"
 ])
 
 with tab1:
@@ -583,9 +401,9 @@ with tab2:
     render_asset_management(df_all, c_symbol)
 
 with tab3:
-    render_settings()
+    render_analytics(df_all, c_symbol, total_val, state.portfolio)
 
 with tab4:
-    render_tools(df_all, c_symbol, total_val, state.portfolio)
+    render_settings()
 
 logger.debug("Application render complete")
