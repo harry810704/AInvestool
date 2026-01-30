@@ -10,7 +10,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 import html
-from typing import Optional
+from typing import Optional, List, Dict
 
 from datetime import datetime
 from config import get_config
@@ -20,9 +20,42 @@ from modules.logger import get_logger
 config = get_config()
 logger = get_logger(__name__)
 
+def render_market_indices(indices_data: List[Dict]):
+    """Render market indices tape."""
+    if not indices_data:
+        return
+
+    cols = st.columns(len(indices_data))
+    for i, data in enumerate(indices_data):
+        with cols[i]:
+            name = data.get("name", "N/A")
+            price = data.get("price", 0.0)
+            change = data.get("change", 0.0)
+
+            color = "#00B4D8" if change >= 0 else "#FF0055"
+            arrow = "▲" if change >= 0 else "▼"
+
+            # Formatting logic
+            if name in ["Bitcoin"]:
+                fmt_price = f"${price:,.0f}"
+            elif name in ["Taiwan"]:
+                fmt_price = f"{price:,.0f}"
+            else:
+                fmt_price = f"{price:,.2f}"
+
+            st.markdown(f"""
+            <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px; text-align: center;">
+                <div style="font-size: 0.75rem; color: #94A3B8; text-transform: uppercase;">{name}</div>
+                <div style="font-size: 1.1rem; font-weight: bold; color: #FAFAFA; margin: 2px 0;">{fmt_price}</div>
+                <div style="font-size: 0.8rem; color: {color}; font-weight: bold;">{arrow} {abs(change):.2f}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+    st.markdown("---")
+
+
 def render_hud_kpi(total_val: float, assets_val: float, liabilities_val: float, g_pl: float, g_roi: float, c_symbol: str):
     """Render the Heads-Up Display (HUD) with Tech styling."""
-
+    
     # Tech Card HTML Template
     def tech_card_html(label, value, sub_value, color_class):
         safe_label = html.escape(str(label))
@@ -133,7 +166,7 @@ def render_health_monitor(assets_val: float, liabilities_val: float, c_symbol: s
                 {'range': [60, 100], 'color': 'rgba(255, 0, 0, 0.1)'}],
         }
     ))
-    
+
     fig.update_layout(
         margin=dict(t=30, b=10, l=30, r=30),
         paper_bgcolor='rgba(0,0,0,0)',
@@ -238,10 +271,13 @@ def render_account_cards(df_all: pd.DataFrame, c_symbol: str):
             </div>
             """, unsafe_allow_html=True)
 
-def render_dashboard(df_all: pd.DataFrame, c_symbol: str, total_val: float, exchange_rate: float = 32.5) -> None:
+def render_dashboard(df_all: pd.DataFrame, c_symbol: str, total_val: float, indices_data: List[Dict] = [], exchange_rate: float = 32.5) -> None:
     """
     Render the main dashboard view (Redesigned).
     """
+    # 0. Market Indices
+    render_market_indices(indices_data)
+
     if df_all.empty:
         st.info("Welcome! Please add assets in the Management tab.")
         return

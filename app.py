@@ -24,6 +24,7 @@ from modules.market_service import (
     get_exchange_rate,
     get_market_data,
     auto_update_portfolio,
+    get_market_indices,
 )
 from modules.ui_dashboard import render_dashboard
 from modules.ui_asset_management import render_asset_management
@@ -394,8 +395,11 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "⚙️ Settings"
 ])
 
+# Fetch market indices (cached)
+market_indices = get_market_indices()
+
 with tab1:
-    render_dashboard(df_all, c_symbol, total_val, current_usd_twd)
+    render_dashboard(df_all, c_symbol, total_val, market_indices, current_usd_twd)
 
 with tab2:
     render_asset_management(df_all, c_symbol)
