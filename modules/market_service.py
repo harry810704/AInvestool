@@ -293,8 +293,8 @@ def get_market_data(
     base_currency = "TWD" if target_currency == "Auto" else target_currency
     
     for item in portfolio:
-        ticker = item.get("symbol") or item.get("Ticker")
-        asset_type = item.get("asset_type") or item.get("asset_class") or item.get("Type")
+        ticker = item.get("symbol") or item.get("Ticker") or "Unknown"
+        asset_type = item.get("asset_type") or item.get("asset_class") or item.get("Type") or "Unknown"
         category = item.get("category") or ("liability" if asset_type == "負債" else "investment") # Fallback for legacy
         asset_currency = item.get("currency") or item.get("Currency", "USD")
         

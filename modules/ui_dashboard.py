@@ -119,6 +119,17 @@ def render_sunburst_allocation(df_all: pd.DataFrame, total_val: float):
     # Filter out 0 value assets to clean up chart
     df_chart = df_all[df_all['Market_Value'] > 0].copy()
     
+    # Sanitize data to prevent sunburst hierarchy errors (None/NaN values)
+    if not df_chart.empty:
+        # Fill NaN/None with Unknown
+        if 'Type' in df_chart.columns:
+            df_chart['Type'] = df_chart['Type'].fillna("Unknown")
+            df_chart.loc[df_chart['Type'] == '', 'Type'] = "Unknown"
+
+        if 'Ticker' in df_chart.columns:
+            df_chart['Ticker'] = df_chart['Ticker'].fillna("Unknown")
+            df_chart.loc[df_chart['Ticker'] == '', 'Ticker'] = "Unknown"
+
     # If Type and Ticker are the same, it messes up Sunburst sometimes, but usually fine
     # Hierarchy: Type -> Ticker
     
