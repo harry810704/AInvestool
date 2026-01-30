@@ -23,6 +23,7 @@ logger = get_logger(__name__)
 config = get_config()
 
 import random
+import requests
 
 def retry_with_backoff(retries=3, backoff_in_seconds=1):
     def decorator(func):
@@ -82,9 +83,11 @@ def search_yahoo_ticker(query: str) -> List[str]:
         return []
     
     try:
-        import requests
         url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}&lang=en-US&region=US&quotesCount=10&newsCount=0"
-        response = requests.get(url, timeout=10)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         data = response.json()
         
