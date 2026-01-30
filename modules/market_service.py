@@ -293,9 +293,23 @@ def get_market_data(
     base_currency = "TWD" if target_currency == "Auto" else target_currency
     
     for item in portfolio:
-        ticker = item.get("symbol") or item.get("Ticker") or "Unknown"
-        asset_type = item.get("asset_type") or item.get("asset_class") or item.get("Type") or "Unknown"
-        category = item.get("category") or ("liability" if asset_type == "負債" else "investment") # Fallback for legacy
+        # Helper to safely get value, handling NaN
+        def safe_get(key, alt_keys=[], default=None):
+            val = item.get(key)
+            for k in alt_keys:
+                if val is None or (isinstance(val, float) and pd.isna(val)) or val == "":
+                    val = item.get(k)
+
+            if val is None or (isinstance(val, float) and pd.isna(val)) or val == "":
+                return default
+            return val
+
+        ticker = safe_get("symbol", ["Ticker"], "Unknown")
+        asset_type = safe_get("asset_type", ["asset_class", "Type"], "Unknown")
+
+        category = safe_get("category")
+        if not category:
+            category = "liability" if asset_type == "負債" else "investment"
         asset_currency = item.get("currency") or item.get("Currency", "USD")
         
         manual_price = item.get("manual_price")

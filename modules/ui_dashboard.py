@@ -149,7 +149,8 @@ def render_sunburst_allocation(df_all: pd.DataFrame, total_val: float):
         height=350
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    # Updated to width="stretch" per Streamlit deprecation warning
+    st.plotly_chart(fig, width="stretch" if "width" in st.plotly_chart.__code__.co_varnames else None, use_container_width=True if "width" not in st.plotly_chart.__code__.co_varnames else None)
 
 def render_health_monitor(assets_val: float, liabilities_val: float, c_symbol: str):
     """Render Debt Health Gauge."""
@@ -185,7 +186,8 @@ def render_health_monitor(assets_val: float, liabilities_val: float, c_symbol: s
         height=200
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    # Updated to width="stretch" per Streamlit deprecation warning
+    st.plotly_chart(fig, width="stretch" if "width" in st.plotly_chart.__code__.co_varnames else None, use_container_width=True if "width" not in st.plotly_chart.__code__.co_varnames else None)
 
     # Text insight
     if ratio == 0:
@@ -229,7 +231,8 @@ def render_mini_trend(history: list, c_symbol: str):
         showlegend=False
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    # Updated to width="stretch" per Streamlit deprecation warning
+    st.plotly_chart(fig, width="stretch" if "width" in st.plotly_chart.__code__.co_varnames else None, use_container_width=True if "width" not in st.plotly_chart.__code__.co_varnames else None)
 
 def render_account_cards(df_all: pd.DataFrame, c_symbol: str):
     """Render account breakdown as glass cards."""
