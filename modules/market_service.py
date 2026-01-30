@@ -82,21 +82,17 @@ def search_yahoo_ticker(query: str) -> List[str]:
         return []
     
     try:
-        import requests
-        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}&lang=en-US&region=US&quotesCount=10&newsCount=0"
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        search = yf.Search(query, news_count=0, max_results=10)
+        quotes = search.quotes
         
         results = []
-        if "quotes" in data:
-            for item in data["quotes"]:
-                if "symbol" in item:
-                    symbol = item["symbol"]
-                    name = item.get("shortname", item.get("longname", "Unknown"))
-                    exch = item.get("exchDisp", "Unknown")
-                    display_str = f"{symbol} | {name} ({exch})"
-                    results.append(display_str)
+        for item in quotes:
+            if "symbol" in item:
+                symbol = item["symbol"]
+                name = item.get("shortname", item.get("longname", "Unknown"))
+                exch = item.get("exchDisp", "Unknown")
+                display_str = f"{symbol} | {name} ({exch})"
+                results.append(display_str)
         
         logger.debug(f"Search for '{query}' returned {len(results)} results")
         return results
@@ -293,9 +289,23 @@ def get_market_data(
     base_currency = "TWD" if target_currency == "Auto" else target_currency
     
     for item in portfolio:
-        ticker = item.get("symbol") or item.get("Ticker")
-        asset_type = item.get("asset_type") or item.get("asset_class") or item.get("Type")
-        category = item.get("category") or ("liability" if asset_type == "負債" else "investment") # Fallback for legacy
+        # Helper to safely get value, handling NaN
+        def safe_get(key, alt_keys=[], default=None):
+            val = item.get(key)
+            for k in alt_keys:
+                if val is None or (isinstance(val, float) and pd.isna(val)) or val == "":
+                    val = item.get(k)
+
+            if val is None or (isinstance(val, float) and pd.isna(val)) or val == "":
+                return default
+            return val
+
+        ticker = safe_get("symbol", ["Ticker"], "Unknown")
+        asset_type = safe_get("asset_type", ["asset_class", "Type"], "Unknown")
+
+        category = safe_get("category")
+        if not category:
+            category = "liability" if asset_type == "負債" else "investment"
         asset_currency = item.get("currency") or item.get("Currency", "USD")
         
         manual_price = item.get("manual_price")
