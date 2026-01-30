@@ -1,2 +1,10 @@
 [server]
 folderWatchBlacklist = ['venv', '.git', '__pycache__', 'node_modules']
+
+[theme]
+base = "dark"
+primaryColor = "#00B4D8"
+backgroundColor = "#0F1116"
+secondaryBackgroundColor = "#1E212B"
+textColor = "#FAFAFA"
+font = "sans serif"

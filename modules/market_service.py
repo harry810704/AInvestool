@@ -459,3 +459,63 @@ def get_market_data(
     
     logger.info(f"Market data fetched for {len(data_list)} assets")
     return pd.DataFrame(data_list)
+
+
+@st.cache_data(ttl=900)  # Cache for 15 minutes
+def get_market_indices() -> List[Dict]:
+    """
+    Fetch major market indices data (Price and % Change).
+    Returns a list of dicts with name, price, change_pct.
+    """
+    indices_map = {
+        "S&P 500": "^GSPC",
+        "Taiwan": "^TWII",
+        "Bitcoin": "BTC-USD",
+        "Gold": "GC=F",
+        "Oil": "CL=F"
+    }
+
+    results = []
+
+    # Use parallel execution for speed
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_name = {
+            executor.submit(fetch_historical_data, symbol, period="5d"): name
+            for name, symbol in indices_map.items()
+        }
+
+        for future in as_completed(future_to_name):
+            name = future_to_name[future]
+            try:
+                hist = future.result()
+                if not hist.empty:
+                    current_price = hist["Close"].iloc[-1]
+
+                    # Calculate change
+                    if len(hist) >= 2:
+                        prev_close = hist["Close"].iloc[-2]
+                        change_pct = ((current_price - prev_close) / prev_close) * 100
+                    else:
+                        change_pct = 0.0
+
+                    results.append({
+                        "name": name,
+                        "price": current_price,
+                        "change": change_pct
+                    })
+                else:
+                    # Fallback for empty data
+                    results.append({
+                        "name": name,
+                        "price": 0.0,
+                        "change": 0.0
+                    })
+            except Exception as e:
+                logger.error(f"Error fetching index {name}: {e}")
+                results.append({"name": name, "price": 0.0, "change": 0.0})
+
+    # Sort to maintain consistent order
+    order = ["S&P 500", "Taiwan", "Bitcoin", "Gold", "Oil"]
+    results.sort(key=lambda x: order.index(x["name"]) if x["name"] in order else 99)
+
+    return results
