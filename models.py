@@ -326,15 +326,30 @@ class Asset(BaseModel):
         def safe_str(val, allow_none=False):
             if val is None or (isinstance(val, float) and pd.isna(val)):
                 return None if allow_none else ""
-            return str(val) if val else ""
+            s = str(val)
+            if s.lower() == 'nan': # Handle string 'nan' if any
+                return None if allow_none else ""
+            return s if s else ""
+
+        # Ensure category is a valid string, handling NaN
+        if category is None or (isinstance(category, float) and pd.isna(category)):
+            category = "investment" # Default
         
+        # Ensure current_price is valid float >= 0
+        current_price = data.get("current_price")
+        if current_price is None or (isinstance(current_price, float) and pd.isna(current_price)):
+             current_price = 0.0
+        else:
+             current_price = float(current_price)
+
         # ========== VALIDATION FOR INVESTMENT ASSETS ==========
         # For investment assets, validate required fields
         is_investment = category in ["investment"]
         
         if is_investment:
             # Validate symbol (required for investments)
-            if not symbol or symbol.strip() == "":
+            if not symbol or (isinstance(symbol, float) and pd.isna(symbol)) or str(symbol).strip() == "":
+                # If symbol is missing but we have ticker?
                 raise ValueError(f"投資資產缺少代號 (symbol/ticker)")
             
             # Validate account_id (required)
@@ -374,7 +389,7 @@ class Asset(BaseModel):
             quantity=quantity,
             avg_cost=avg_cost,
             currency=data.get("currency") or data.get("Currency", "USD"),
-            current_price=float(data.get("current_price", 0)),
+            current_price=current_price,
             manual_price=float(data.get("manual_price") or data.get("Manual_Price", 0)),
             last_update=safe_str(data.get("last_update") or data.get("Last_Update", "N/A")),
             suggested_sl=parse_opt_float("suggested_sl", "Suggested_SL"),
