@@ -245,6 +245,18 @@ def add_asset_dialog():
             "manual_price": 0.0, 
         }
         
+        # Determine category/type and sub_type
+        new_asset["sub_type"] = ""
+        if atype == "現金":
+            new_asset["category"] = "cash"
+            new_asset["asset_type"] = "現金"
+        elif atype == "負債":
+            new_asset["category"] = "liability"
+            new_asset["asset_type"] = "其他負債"
+        else:
+            new_asset["category"] = "investment"
+            new_asset["asset_type"] = atype
+
         if is_financial:
             prefix = "CASH" if atype == "現金" else "DEBT"
             final_ticker = f"{prefix}-{curr}" 
@@ -256,10 +268,32 @@ def add_asset_dialog():
             if not ticker:
                 st.error("Symbol required")
                 return
+
+            # Extract name from sel_search if available
+            asset_name = ""
+            if sel_search:
+                parts = sel_search.split(" | ")
+                if len(parts) > 1:
+                    name_part = parts[1]
+                    asset_name = name_part.split(" (")[0] # Simple split to remove exchange info
+
             new_asset["symbol"] = ticker
+            new_asset["name"] = asset_name
             new_asset["quantity"] = qty
             new_asset["avg_cost"] = cost
             
+            # Try to fetch current price immediately
+            try:
+                ok, price, err = fetch_single_price(ticker)
+                if ok and price > 0:
+                    new_asset["current_price"] = price
+                    new_asset["manual_price"] = price
+                    new_asset["last_update"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                else:
+                    new_asset["current_price"] = 0.0
+            except Exception:
+                new_asset["current_price"] = 0.0
+
         st.session_state.portfolio.append(new_asset)
         save_all_data(st.session_state.accounts, st.session_state.portfolio, st.session_state.allocation_targets, st.session_state.history_data, st.session_state.get("loan_plans", []))
         st.session_state["force_refresh_market_data"] = True
