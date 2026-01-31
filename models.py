@@ -635,6 +635,7 @@ class LoanScheduleItem(BaseModel):
     principal_paid: float
     interest_paid: float
     remaining_balance: float
+    is_paid: bool = False
     
     def to_dict(self) -> dict:
         return {
@@ -643,7 +644,8 @@ class LoanScheduleItem(BaseModel):
             "payment_amount": self.payment_amount,
             "principal_paid": self.principal_paid,
             "interest_paid": self.interest_paid,
-            "remaining_balance": self.remaining_balance
+            "remaining_balance": self.remaining_balance,
+            "is_paid": self.is_paid
         }
 
 
@@ -660,6 +662,11 @@ class LoanPlan(BaseModel):
     
     extra_fees: float = Field(default=0.0, ge=0, description="One-time fees or setup costs")
     
+    # New fields
+    payment_account_id: Optional[str] = Field(None, description="Account ID to deduct payments from")
+    repayment_method: str = Field(default="equal_principal_interest", description="Repayment Method")
+    next_payment_number: int = Field(default=1, description="Next payment number to process")
+
     def to_dict(self) -> dict:
         return {
             "asset_id": self.asset_id,
@@ -668,7 +675,7 @@ class LoanPlan(BaseModel):
             "period_months": self.period_months,
             "start_date": self.start_date,
             "extra_fees": self.extra_fees,
-            # Schedule is usually derived or stored in a separate table structure for Excel flattened view
-            # But for object completeness we keep it here.
-            # When saving to Excel, we might just save the Plan params or the full schedule.
+            "payment_account_id": self.payment_account_id or "",
+            "repayment_method": self.repayment_method,
+            "next_payment_number": self.next_payment_number
         }
