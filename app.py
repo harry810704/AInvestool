@@ -20,6 +20,7 @@ from modules.drive_manager import (
     get_user_info,
 )
 from modules.data_loader import load_all_data, save_all_data
+from modules.loan_service import process_loan_payments
 from modules.market_service import (
     get_exchange_rate,
     get_market_data,
@@ -239,6 +240,18 @@ if not state.load_portfolio:
         state.loan_plans = loan_plans
             
     state.load_portfolio = True
+
+    # Process Loan Payments (Auto-deduction)
+    if state.loan_plans and state.portfolio:
+        try:
+            processed_count = process_loan_payments(state.portfolio, state.loan_plans)
+            if processed_count > 0:
+                save_all_data(state.accounts, state.portfolio, state.allocation_targets, state.history_data, state.loan_plans)
+                st.toast(f"自動扣款: 已處理 {processed_count} 筆貸款還款", icon="💸")
+                logger.info(f"Processed {processed_count} loan payments")
+        except Exception as e:
+            logger.error(f"Error processing loan payments: {e}")
+
     # Force market data refresh when portfolio is loaded
     st.session_state["force_refresh_market_data"] = True
 

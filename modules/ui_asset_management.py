@@ -11,6 +11,7 @@ import html
 from datetime import datetime
 from modules.data_loader import save_all_data
 from modules.market_service import search_yahoo_ticker, fetch_single_price
+from modules.loan_service import create_loan_plan
 from models import Account
 from config import get_config
 
@@ -207,22 +208,75 @@ def add_asset_dialog():
         sel_acc_name = st.selectbox("Account", list(acc_options.keys()))
         sel_acc_id = acc_options[sel_acc_name]
 
-    is_financial = atype in ["現金", "負債"]
+    is_cash = atype == "現金"
+    is_loan = atype == "負債"
+    is_investment = not (is_cash or is_loan)
+
+    # Variables for Loan
+    loan_name = ""
+    loan_amount = 0.0
+    loan_rate = 0.0
+    loan_period = 12
+    loan_start = datetime.now()
+    loan_fee = 0.0
+    loan_method = "equal_principal_interest"
+    pay_account_id = None
+
+    # Variables for others
     ticker = ""
-    amount = 0
-    qty = 0
-    cost = 0
+    amount = 0.0
+    qty = 0.0
+    cost = 0.0
     custom_name = ""
     curr = "USD"
     
-    if is_financial:
+    if is_loan:
+        c1, c2 = st.columns(2)
+        loan_name = c1.text_input("Loan Name", placeholder="e.g. Mortgage")
+        curr = c2.selectbox("Currency", ["USD", "TWD"], index=1)
+
+        c3, c4 = st.columns(2)
+        loan_amount = c3.number_input("Principal Amount", min_value=0.0, step=10000.0)
+        loan_rate = c4.number_input("Annual Interest Rate (%)", min_value=0.0, value=2.0, step=0.1)
+
+        c5, c6 = st.columns(2)
+        loan_period = c5.number_input("Period (Months)", min_value=1, value=240, step=12)
+        loan_start = c6.date_input("Start Date", value=datetime.now())
+
+        c7, c8 = st.columns(2)
+        loan_fee = c7.number_input("Handling Fee", min_value=0.0, step=100.0)
+        repayment_method_map = {"本息平均攤還": "equal_principal_interest", "本金平均攤還": "equal_principal"}
+        method_label = c8.selectbox("Repayment Method", list(repayment_method_map.keys()))
+        loan_method = repayment_method_map[method_label]
+
+        # Payment Account Selection
+        st.markdown("---")
+        st.caption("Auto-Deduction Settings")
+
+        # Find cash assets
+        cash_assets = [
+            a for a in st.session_state.portfolio
+            if a.get("category") == "cash" or a.get("asset_type") == "現金"
+        ]
+
+        if cash_assets:
+            cash_opts = {f"{a.get('name', 'Cash')} ({a.get('currency', '')})": a.get("asset_id") for a in cash_assets}
+            cash_opts["None (Manual)"] = None
+            sel_cash = st.selectbox("Payment Account", list(cash_opts.keys()))
+            pay_account_id = cash_opts[sel_cash]
+        else:
+            st.warning("No Cash assets found for auto-deduction.")
+            pay_account_id = None
+
+    elif is_cash:
         c_name, c_curr = st.columns([2, 1])
-        with c_name: custom_name = st.text_input("Name (Optional)", placeholder="e.g. Mortgage")
+        with c_name: custom_name = st.text_input("Name (Optional)", placeholder="e.g. Emergency Fund")
         with c_curr: curr = st.selectbox("Currency", ["USD", "TWD"], index=1)
             
         c_amt, _ = st.columns([2, 1])
         amount = c_amt.number_input("Amount/Balance", min_value=0.0, step=1000.0)
     else:
+        # Investment
         c_s, c_r = st.columns([2, 3])
         q = c_s.text_input("Search", placeholder="TSLA...")
         sel_search = c_r.selectbox("Results", search_yahoo_ticker(q) if q else [])
@@ -257,14 +311,56 @@ def add_asset_dialog():
             new_asset["category"] = "investment"
             new_asset["asset_type"] = atype
 
-        if is_financial:
-            prefix = "CASH" if atype == "現金" else "DEBT"
+        if is_loan:
+             # Loan specific logic
+            if not loan_name: loan_name = "Loan"
+            final_ticker = f"DEBT-{curr}"
+
+            new_asset["symbol"] = final_ticker
+            new_asset["name"] = loan_name
+            new_asset["quantity"] = loan_amount # Principal
+            new_asset["avg_cost"] = 1.0 # 1:1 value
+            new_asset["current_price"] = 1.0
+            new_asset["loan_plan_id"] = new_id # Use asset_id as plan key reference or just implicit
+
+            # Create Loan Plan
+            loan_plan = create_loan_plan(
+                asset_id=new_id,
+                total_amount=loan_amount,
+                annual_rate=loan_rate,
+                period_months=loan_period,
+                start_date=loan_start.strftime("%Y-%m-%d"),
+                extra_fees=loan_fee,
+                payment_account_id=pay_account_id,
+                repayment_method=loan_method
+            )
+
+            # Save Loan Plan
+            if "loan_plans" not in st.session_state:
+                st.session_state.loan_plans = []
+
+            st.session_state.loan_plans.append(loan_plan.to_dict())
+
+            # Deduct Fee if Applicable
+            if loan_fee > 0 and pay_account_id:
+                # Find the cash asset in session state
+                for a in st.session_state.portfolio:
+                    if a.get("asset_id") == pay_account_id:
+                        current_q = float(a.get("quantity", 0))
+                        a["quantity"] = current_q - loan_fee
+                        st.toast(f"Deducted fee {loan_fee} from {a.get('name')}", icon="💸")
+                        break
+
+        elif is_cash:
+            prefix = "CASH"
             final_ticker = f"{prefix}-{curr}" 
             if custom_name: new_asset["name"] = custom_name
             new_asset["symbol"] = final_ticker
             new_asset["quantity"] = amount
             new_asset["avg_cost"] = 1.0
+            new_asset["current_price"] = 1.0
         else:
+            # Investment
             if not ticker:
                 st.error("Symbol required")
                 return
@@ -275,7 +371,7 @@ def add_asset_dialog():
                 parts = sel_search.split(" | ")
                 if len(parts) > 1:
                     name_part = parts[1]
-                    asset_name = name_part.split(" (")[0] # Simple split to remove exchange info
+                    asset_name = name_part.split(" (")[0]
 
             new_asset["symbol"] = ticker
             new_asset["name"] = asset_name
